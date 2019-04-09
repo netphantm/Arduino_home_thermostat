@@ -35,10 +35,19 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define REPEAT_CAL false
 
 // Using two fonts since numbers are nice when bold
-#define LABEL1_FONT &FreeSansOblique12pt7b // Key label font 1
-#define LABEL2_FONT &FreeSansBold12pt7b    // Key label font 2
+#define Italic_FONT &FreeSansOblique12pt7b // Key label font 1
+#define Bold_FONT &FreeSansBold12pt7b    // Key label font 2
 
 // ----- NORMAL DISPLAY ----- //
+// Keypad start position, key sizes and spacing
+#define KEY_N_X 42 // Centre of key
+#define KEY_N_Y 282 //302
+#define KEY_N_W 67 // Width and height
+#define KEY_N_H 30
+#define KEY_N_SPACING_X 10 // X and Y gap
+#define KEY_N_SPACING_Y 7
+#define KEY_N_TEXTSIZE 1   // Font size multiplier
+
 // Numeric display box N1 size and location
 #define DISP1_N_X 70
 #define DISP1_N_Y 55
@@ -54,16 +63,6 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define DISP2_N_H 45
 #define DISP2_N_TSIZE 5
 #define DISP2_N_TCOLOR TFT_CYAN
-
-// Keypad start position, key sizes and spacing
-#define KEY_N_X 42 // Centre of key
-#define KEY_N_Y 282 //302
-#define KEY_N_W 67 // Width and height
-#define KEY_N_H 30
-#define KEY_N_SPACING_X 10 // X and Y gap
-#define KEY_N_SPACING_Y 7
-#define KEY_N_TEXTSIZE 1   // Font size multiplier
-
 // ----- NORMAL DISPLAY END ----- //
 
 // ----- SETUP DISPLAY ----- //
@@ -99,6 +98,7 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 #define DISP3_S_H 45
 #define DISP3_S_TSIZE 3
 #define DISP3_S_TCOLOR TFT_CYAN
+// ----- SETUP DISPLAY END ----- //
 
 // Number length, buffer for storing it and character index
 #define NUM_LEN 12
@@ -108,32 +108,31 @@ uint8_t numberIndex = 0;
 #define STATUS_X 120 // Centred on this
 #define STATUS_Y 305
 
-// ----- SETUP DISPLAY END ----- //
-int intv = 10;
+float temp_c = 25;
 int maxc = 25;
+int intv = 10;
 int hist = 3;
+int pressed = 0;
 String numberBuffer1 = String(maxc);
 String numberBuffer2 = String(intv);
 String numberBuffer3 = String(hist);
 bool display_changed = true;
 bool setup_screen = false;
-float temp_c = 25;
-// Create 12 keys for the keypad
-char keyLabel1[12][5] = {"temp", "intv", "hist", "+", "+", "+", "-", "-", "-", "Send", "RST", "Exit"};
-uint16_t keyColor1[12] = {
+// Create 12 keys for the setup keypad
+char keyLabel1[12][5] = {"temp", "intv", "hstr", "+", "+", "+", "-", "-", "-", "Send", "RST", "Exit"};
+uint16_t keyColor1[15] = {
                         TFT_BLACK, TFT_BLACK, TFT_BLACK,
                         TFT_RED, TFT_RED, TFT_RED,
                         TFT_BLUE, TFT_BLUE, TFT_BLUE,
                         TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN
                         };
-// Create 3 keys for the keypad
+// Create 3 keys for the display keypad
 char keyLabel2[3][6] = {"+", "-", "Setup"};
-uint16_t keyColor2[12] = {
+uint16_t keyColor2[15] = {
                         TFT_RED,
                         TFT_BLUE,
                         TFT_DARKGREEN
                         };
-
 // Invoke the TFT_eSPI button class and create all the button objects
 TFT_eSPI_Button key[12];
 
@@ -157,12 +156,12 @@ void setup() {
   tft.fillRect(0, 0, 240, 320, TFT_DARKGREY);
 
   delay(10); // UI debouncing
-}
+} // void setup() END
 
 //------------------------------------------------------------------------------------------
 
 void loop(void) {
-  int i_am_here = 0;
+  String IamHere = "loop()";
   int pressed = 0;
   if (display_changed && setup_screen) {
     // ----- SETUP DISPLAY INIT ----- //
@@ -172,7 +171,7 @@ void loop(void) {
 
     // Draw number display area and frame
     tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
-    tft.setFreeFont(LABEL1_FONT);  // Choose a nice font that fits box
+    tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_BLACK);
 
     tft.drawString("Temperature", 6, 20);
@@ -199,35 +198,28 @@ void loop(void) {
 
     // Draw the string, the value returned is the width in pixels
     int xwidth1 = tft.drawString(numberBuffer1, DISP1_S_X + 4, DISP1_S_Y + 9);
-
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     // but it will not work with italic or oblique fonts due to character overlap.
     tft.fillRect(DISP1_S_X + 4 + xwidth1, DISP1_S_Y + 1, DISP1_S_W - xwidth1 - 5, DISP1_S_H - 2, TFT_BLACK);
 
     // Draw the string, the value returned is the width in pixels
     int xwidth2 = tft.drawString(numberBuffer2, DISP2_S_X + 4, DISP2_S_Y + 9);
-
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     // but it will not work with italic or oblique fonts due to character overlap.
     tft.fillRect(DISP2_S_X + 4 + xwidth2, DISP2_S_Y + 1, DISP2_S_W - xwidth2 - 5, DISP2_S_H - 2, TFT_BLACK);
 
     // Draw the string, the value returned is the width in pixels
     int xwidth3 = tft.drawString(numberBuffer3, DISP3_S_X + 4, DISP3_S_Y + 9);
-
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     // but it will not work with italic or oblique fonts due to character overlap.
     tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_BLACK);
 
     // Draw keypad Setup
-    //drawKeypad1(4, 3, keyLabel1, keyColor1);
-    // Draw the keys
-    delay(10);
     for (uint8_t row = 0; row < 4; row++) {
       for (uint8_t col = 0; col < 3; col++) {
         uint8_t b = col + row * 3;
 
-        if (b > 8) tft.setFreeFont(LABEL1_FONT);
-        else tft.setFreeFont(LABEL2_FONT);
+        tft.setFreeFont(Bold_FONT);
 
         key[b].initButton(&tft, KEY_S_X + col * (KEY_S_W + KEY_S_SPACING_X),
                           KEY_S_Y + row * (KEY_S_H + KEY_S_SPACING_Y), // x, y, w, h, outline, fill, text
@@ -238,7 +230,7 @@ void loop(void) {
     // ----- SETUP DISPLAY INIT END ----- //
     }
     display_changed = false;
-    i_am_here = 1;
+    IamHere = "display_changed && setup_screen";
   }
 
   if (display_changed && ! setup_screen) {
@@ -249,7 +241,7 @@ void loop(void) {
 
     // Draw number display area and frame
     tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
-    tft.setFreeFont(LABEL1_FONT);  // Choose a nice font that fits box
+    tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_BLACK);
 
     tft.drawString("Current Temperature", 6, 20);
@@ -271,28 +263,22 @@ void loop(void) {
 
     // Draw the string, the value returned is the width in pixels
     int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
-
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     // but it will not work with italic or oblique fonts due to character overlap.
     tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_BLACK);
 
     // Draw the string, the value returned is the width in pixels
     int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
-
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     // but it will not work with italic or oblique fonts due to character overlap.
     tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_BLACK);
 
     // Draw keypad Display
-    //drawKeypad2(1, 3, keyLabel2, keyColor2);
-    // Draw the keys
-    delay(10);
     for (uint8_t row = 0; row < 1; row++) {
       for (uint8_t col = 0; col < 3; col++) {
         uint8_t b = col + row * 3;
 
-        if (b > 1) tft.setFreeFont(LABEL1_FONT);
-        else tft.setFreeFont(LABEL2_FONT);
+        tft.setFreeFont(Bold_FONT);
 
         key[b].initButton(&tft, KEY_N_X + col * (KEY_N_W + KEY_N_SPACING_X),
                           KEY_N_Y + row * (KEY_N_H + KEY_N_SPACING_Y), // x, y, w, h, outline, fill, text
@@ -303,18 +289,20 @@ void loop(void) {
     }
     // ----- DISPLAY ROUTINE INIT END ----- //
     display_changed = false;
-    i_am_here = 2;
+    IamHere = "display_changed && ! setup_screen";
   }
 
-  uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
-  // Pressed will be set true is there is a valid touch on the screen
-  pressed = tft.getTouch(&t_x, &t_y);
+  // --- key was pressed --- //
 
-  if (setup_screen && pressed > 0) {
+  if (setup_screen) {
     // ----- SETUP ROUTINE ----- //
+    uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
+    // Pressed will be set true is there is a valid touch on the screen
+    pressed = tft.getTouch(&t_x, &t_y);
+
     // Check if any key coordinate boxes contain the touch coordinates
     for (uint8_t b = 3; b < 12; b++) {
-      if (pressed && key[b].contains(t_x, t_y)) {
+      if (key[b].contains(t_x, t_y)) {
         key[b].press(true);  // tell the button it is pressed
       } else {
         key[b].press(false);  // tell the button it is NOT pressed
@@ -322,22 +310,18 @@ void loop(void) {
     }
 
     // Check if any key has changed state
-    for (uint8_t b = 0; b < 12; b++) {
-
-      if (b > 5) tft.setFreeFont(LABEL1_FONT);
-      else tft.setFreeFont(LABEL2_FONT);
-
+    for (uint8_t b = 3; b < 12; b++) {
       if (key[b].justReleased()) key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
         key[b].drawButton(true);  // draw invert
 
         // if a numberpad button, append + to the numberBuffer
         // 3/6
-        if (b == 3 && maxc <= 29) {
+        if (b == 3 && maxc <= 36) {
             maxc++;
             status(""); // Clear the old status
         }
-        if (b == 6 && maxc >= 19) {
+        if (b == 6 && maxc >= 16) {
             maxc--;
             status(""); // Clear the old status
         }
@@ -353,7 +337,7 @@ void loop(void) {
         }
 
         //5/8
-        if (b == 5 && hist <= 4) {
+        if (b == 5 && hist <= 6) {
             hist++;
             status(""); // Clear the old status
         }
@@ -420,17 +404,21 @@ void loop(void) {
 
         delay(10); // UI debouncing
       }
-    i_am_here = 3;
     }
     pressed = 0;
+    IamHere = "setup_screen && pressed";
     // ----- SETUP ROUTINE END ----- //
   }
 
-  if (! setup_screen && pressed > 0) {
+  if (! setup_screen) {
     // ----- DISPLAY ROUTINE ----- //
+    uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
+    // Pressed will be set true is there is a valid touch on the screen
+    pressed = tft.getTouch(&t_x, &t_y);
+
     // Check if any key coordinate boxes contain the touch coordinates
     for (uint8_t b = 0; b < 3; b++) {
-      if (pressed && key[b].contains(t_x, t_y)) {
+      if (key[b].contains(t_x, t_y)) {
         key[b].press(true);  // tell the button it is pressed
       } else {
         key[b].press(false);  // tell the button it is NOT pressed
@@ -439,10 +427,6 @@ void loop(void) {
 
     // Check if any key has changed state
     for (uint8_t b = 0; b < 3; b++) {
-
-      if (b > 0) tft.setFreeFont(LABEL1_FONT);
-      else tft.setFreeFont(LABEL2_FONT);
-
       if (key[b].justReleased()) key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
         key[b].drawButton(true);  // draw invert
@@ -491,32 +475,45 @@ void loop(void) {
 
         delay(10); // UI debouncing
       }
-    i_am_here = 4;
     }
-    // ----- DISPLAY ROUTINE END ----- //
     pressed = 0;
+    IamHere = "! setup_screen && pressed";
+    // ----- DISPLAY ROUTINE END ----- //
   }
-  Serial.print("i_am_here = ");
-  Serial.println(i_am_here);
+
+  Serial.print("IamHere = ");
+  Serial.println(IamHere);
   //Serial.print("setup_screen = ");
   //Serial.println(setup_screen);
   //Serial.print("display_changed = ");
   //Serial.println(display_changed);
   //Serial.println("");
-  //delay(200);
+  delay(200);
+} // void loop() END
+
+//------------------------------------------------------------------------------------------
+
+// Print something in the mini status bar
+void status(const char *msg) {
+  tft.setTextPadding(240);
+  //tft.setCursor(STATUS_X, STATUS_Y);
+  tft.setTextColor(TFT_GREEN, TFT_DARKGREY);
+  tft.setTextFont(0);
+  tft.setTextDatum(TC_DATUM);
+  tft.setTextSize(1);
+  tft.drawString(msg, STATUS_X, STATUS_Y);
 }
 
 //------------------------------------------------------------------------------------------
 /*
-void drawKeypad1(uint8_t key_row, uint8_t key_col, char keyLabel1, uint16_t keyColor1)
-{
+void drawKeypad1(uint8_t key_row, uint8_t key_col, char keyLabel1, uint16_t keyColor1) {
   // Draw the keys
   for (uint8_t row = 0; row < key_row; row++) {
     for (uint8_t col = 0; col < key_col; col++) {
       uint8_t b = col + row * 3;
 
-      //if (b > 8) tft.setFreeFont(LABEL1_FONT);
-      //else tft.setFreeFont(LABEL2_FONT);
+      //if (b > 8) tft.setFreeFont(Italic_FONT);
+      //else tft.setFreeFont(Bold_FONT);
 
       key[b].initButton(&tft, KEY_S_X + col * (KEY_S_W + KEY_S_SPACING_X),
                         KEY_S_Y + row * (KEY_S_H + KEY_S_SPACING_Y), // x, y, w, h, outline, fill, text
@@ -527,15 +524,14 @@ void drawKeypad1(uint8_t key_row, uint8_t key_col, char keyLabel1, uint16_t keyC
   }
 }
 
-void drawKeypad2(uint8_t key_row, uint8_t key_col, char keyLabel2, uint16_t keyColor2)
-{
+void drawKeypad2(uint8_t key_row, uint8_t key_col, char keyLabel2, uint16_t keyColor2) {
   // Draw the keys
   for (uint8_t row = 0; row < key_row; row++) {
     for (uint8_t col = 0; col < key_col; col++) {
       uint8_t b = col + row * 3;
 
-      //if (b > 8) tft.setFreeFont(LABEL1_FONT);
-      //else tft.setFreeFont(LABEL2_FONT);
+      //if (b > 8) tft.setFreeFont(Italic_FONT);
+      //else tft.setFreeFont(Bold_FONT);
 
       key[b].initButton(&tft, KEY_S_X + col * (KEY_S_W + KEY_S_SPACING_X),
                         KEY_S_Y + row * (KEY_S_H + KEY_S_SPACING_Y), // x, y, w, h, outline, fill, text
@@ -548,8 +544,7 @@ void drawKeypad2(uint8_t key_row, uint8_t key_col, char keyLabel2, uint16_t keyC
 */
 //------------------------------------------------------------------------------------------
 
-void touch_calibrate()
-{
+void touch_calibrate() {
   uint16_t calData[5];
   uint8_t calDataOK = 0;
 
@@ -614,17 +609,3 @@ void touch_calibrate()
 }
 
 //------------------------------------------------------------------------------------------
-
-// Print something in the mini status bar
-void status(const char *msg) {
-  tft.setTextPadding(240);
-  //tft.setCursor(STATUS_X, STATUS_Y);
-  tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
-  tft.setTextFont(0);
-  tft.setTextDatum(TC_DATUM);
-  tft.setTextSize(1);
-  tft.drawString(msg, STATUS_X, STATUS_Y);
-}
-
-//------------------------------------------------------------------------------------------
-
