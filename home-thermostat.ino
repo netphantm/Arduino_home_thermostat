@@ -21,13 +21,13 @@
 
 // This is the file name used to store the calibration data
 // You can change this to create new calibration files.
-// The SPIFFS file name must start with "/".
-#define CALIBRATION_FILE "/TouchCalData2"
+#define CALIBRATION_FILE "/TouchCalData2" // SPIFFS file name must start with "/".
 
 // Set REPEAT_CAL to true instead of false to run calibration
 // again, otherwise it will only be done once.
 // Repeat calibration if you change the screen rotation.
 #define REPEAT_CAL false
+#define FORMAT_SPIFFS false
 
 // Using two fonts since numbers are nice when bold
 #define Italic_FONT &FreeSansOblique12pt7b // Key label font 1
@@ -106,9 +106,10 @@ uint8_t numberIndex = 0;
 
 // from thermostat.ino
 const size_t bufferSize = JSON_OBJECT_SIZE(6) + 160;
-const static String sFile = "/settings.txt";
-const static String configHost = "http://temperature.hugo.ro"; // chicken/egg situation, you have to get initial config somewhere
+const static String sFile = "/settings.txt";  // SPIFFS file name must start with "/".
+const static String configHost = "http://temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
 unsigned long uptime = (millis() / 1000 );
+unsigned long status_timer = millis();
 unsigned long prevTime = 0;
 unsigned long prevTimeIP = 0;
 bool emptyFile = false;
@@ -130,7 +131,7 @@ String loghost;
 String epochTime;
 uint16_t color;
 int httpsPort;
-int interval = 20000;
+int interval = 300000;
 int cursorX;
 int cursorY;
 float temp_min;
@@ -146,7 +147,7 @@ int maxc = 25;
 int hist = 3;
 int pressed = 0;
 String numberBuffer1 = String(maxc);
-String numberBuffer2 = String(interval/1000);
+String numberBuffer2 = String(interval/60000);
 String numberBuffer3 = String(hist);
 bool display_changed = true;
 bool setup_screen = false;
@@ -574,65 +575,11 @@ String formatBytes(size_t bytes) {
 
 //// WiFi config mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  Serial.println("Opening configuration portal");
+  Serial.println(F("Opening configuration portal"));
 }
 
-void touch_calibrate() {
-  uint16_t calData[5];
-  uint8_t calDataOK = 0;
-  // check file system exists
-  // check if calibration file exists and size is correct
-  if (SPIFFS.exists(CALIBRATION_FILE)) {
-    if (REPEAT_CAL)
-    {
-      // Delete if we want to re-calibrate
-      SPIFFS.remove(CALIBRATION_FILE);
-    }
-    else
-    {
-      File f = SPIFFS.open(CALIBRATION_FILE, "r");
-      if (f) {
-        if (f.readBytes((char *)calData, 8) == 8)
-          calDataOK = 1;
-        f.close();
-      }
-    }
-  }
-
-  if (calDataOK && !REPEAT_CAL) {
-    // calibration data valid
-    tft.setTouch(calData);
-  } else {
-    // data not valid so recalibrate
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(20, 0);
-    tft.setTextFont(2);
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-
-    tft.println("Touch corners as indicated");
-
-    tft.setTextFont(1);
-    tft.println();
-
-    if (REPEAT_CAL) {
-      tft.setTextColor(TFT_RED, TFT_BLACK);
-      tft.println("Set REPEAT_CAL to false to stop this running again!");
-    }
-
-    tft.calibrateTouch(calData, TFT_MAGENTA, TFT_BLACK, 9);
-
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.println("Calibration complete!");
-
-    // store data
-    File f = SPIFFS.open(CALIBRATION_FILE, "w");
-    if (f) {
-      f.write((const unsigned char *)calData, 8);
-      f.close();
-    }
-  }
-}
+//void touch_calibrate() {
+//}
 
 // Print something in the mini status bar
 void status(const char *msg) {
@@ -643,6 +590,12 @@ void status(const char *msg) {
   tft.setTextDatum(TC_DATUM);
   tft.setTextSize(1);
   tft.drawString(msg, STATUS_X, STATUS_Y);
+}
+
+void status_clear() {
+  if (status_timer <= (millis() - 1000)) {
+    status(""); // Clear the old status
+  }
 }
 
 //------------------------------------------------------------------------------------------
@@ -691,12 +644,12 @@ void setup() {
   IPAddress ip = WiFi.localIP();
   sprintf(lanIP, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
 
-  if (!SPIFFS.begin()) { // initialize SPIFFS
-    Serial.println("Formating file system");
+  if (!SPIFFS.begin() || FORMAT_SPIFFS) { // initialize SPIFFS
+    Serial.println(F("Formating file system"));
     SPIFFS.format();
     SPIFFS.begin();
   }
-  Serial.println("SPIFFS started. Contents:");
+  Serial.println(F("SPIFFS started. Contents:"));
   Dir dir = SPIFFS.openDir("/");
   while (dir.next()) { // List the file system contents
     String fileName = dir.fileName();
@@ -706,7 +659,60 @@ void setup() {
   Serial.println("\n");
 
   // Calibrate the touch screen and retrieve the scaling factors
-  touch_calibrate();
+  uint16_t calData[5];
+  uint8_t calDataOK = 0;
+
+  // check if calibration file exists and size is correct
+  if (SPIFFS.exists(CALIBRATION_FILE)) {
+    if (REPEAT_CAL)
+    {
+      // Delete if we want to re-calibrate
+      SPIFFS.remove(CALIBRATION_FILE);
+    }
+    else
+    {
+      File f = SPIFFS.open(CALIBRATION_FILE, "r");
+      if (f) {
+        if (f.readBytes((char *)calData, 14) == 14)
+          calDataOK = 1;
+        f.close();
+      }
+    }
+  }
+
+  if (calDataOK && !REPEAT_CAL) {
+    // calibration data valid
+    tft.setTouch(calData);
+  } else {
+    // data not valid so recalibrate
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(20, 0);
+    tft.setTextFont(2);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    tft.println("Touch corners as indicated");
+
+    tft.setTextFont(1);
+    tft.println();
+
+    if (REPEAT_CAL) {
+      tft.setTextColor(TFT_RED, TFT_BLACK);
+      tft.println("Set REPEAT_CAL to false to stop this running again!");
+    }
+
+    tft.calibrateTouch(calData, TFT_MAGENTA, TFT_BLACK, 15);
+
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.println("Calibration complete!");
+
+    // store data
+    File f = SPIFFS.open(CALIBRATION_FILE, "w");
+    if (f) {
+      f.write((const unsigned char *)calData, 14);
+      f.close();
+    }
+  }
 
   switchRelais("OFF"); // start with relais OFF
 
@@ -760,7 +766,7 @@ void loop(void) {
     tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_BLACK);
     String numberBuffer1= String(maxc);
     tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_BLACK);
-    String numberBuffer2= String(interval/1000);
+    String numberBuffer2= String(interval/60000);
     tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_BLACK);
     String numberBuffer3= String(hist);
 
@@ -891,12 +897,12 @@ void loop(void) {
         }
 
         // 4/7
-        if (b == 4 && interval <= 25000) {
-            interval = interval + 5000;
+        if (b == 4 && interval <= 840000) {
+            interval = interval + 60000;
             status(""); // Clear the old status
         }
-        if (b == 7 && interval >= 10000) {
-            interval = interval - 5000;
+        if (b == 7 && interval >= 180000) {
+            interval = interval - 60000;
             status(""); // Clear the old status
         }
 
@@ -912,16 +918,17 @@ void loop(void) {
 
         // New
         if (b == 10) {
-          interval = 20000;
+          interval = 300000;
           maxc = 25;
           hist = 3;
+          status_timer = millis();
           status("Values cleared");
         }
 
         tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_BLACK);
         String numberBuffer1= String(maxc);
         tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_BLACK);
-        String numberBuffer2= String(interval/1000);
+        String numberBuffer2= String(interval/60000);
         tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_BLACK);
         String numberBuffer3= String(hist);
 
@@ -943,15 +950,17 @@ void loop(void) {
         tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_BLACK);
 
         if (b == 9) {
-          status("Values sent to serial port");
           Serial.println("maxc: " + numberBuffer1);
           Serial.println("interval: " + numberBuffer2);
           Serial.println("hist: " + numberBuffer3);
+          status_timer = millis();
+          status("Values sent to serial port");
         }
 
         // Exit Setup
         if (b == 11) {
-          Serial.println("Exit Setup screen");
+          status("Exit Setup screen");
+          Serial.println(F("Exit Setup screen"));
           setup_screen = false;
           display_changed = true;
           delay(300);
@@ -991,17 +1000,20 @@ void loop(void) {
         // 0/1
         if (b == 0 && maxc <= 29) {
             maxc++;
+            status_timer = millis();
             status("Temperature raised");
         }
         if (b == 1 && maxc >= 19) {
             maxc--;
+            status_timer = millis();
             status("Temperature lowered");
         }
         // Enter Setup
         if (b == 2) {
-          Serial.println("Enter Setup screen");
+          Serial.println(F("Enter Setup screen"));
           setup_screen = true;
           display_changed = true;
+          status("Enter Setup screen");
           delay(300);
         }
 
@@ -1071,4 +1083,5 @@ void loop(void) {
     printProgress(passed * 100 / interval);
   }
   server.handleClient();
+  status_clear();
 } // void loop() END
