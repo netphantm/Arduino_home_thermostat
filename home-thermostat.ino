@@ -124,6 +124,7 @@ String WiFi_Name;
 String hostname = "Donbot";
 uint8_t sha1[20];
 float temp_c = 25;
+float temp_dev;
 String webString;
 String relaisState;
 String SHA1;
@@ -134,25 +135,22 @@ int httpsPort;
 int interval = 300000;
 int cursorX;
 int cursorY;
-float temp_min;
-float temp_max;
-float temp_dev;
+int temp_min = 24;
+int temp_max = 26;
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
 ESP8266WebServer server(80);
 
 // new
-int maxc = 25;
-int hist = 3;
 int pressed = 0;
-String numberBuffer1 = String(maxc);
-String numberBuffer2 = String(interval/60000);
-String numberBuffer3 = String(hist);
+String numberBuffer1 = String(temp_min);
+String numberBuffer2 = String(temp_max);
+String numberBuffer3 = String(interval/60000);
 bool display_changed = true;
 bool setup_screen = false;
 // Create 12 keys for the setup keypad
-char keyLabel1[12][5] = {"tmp", "int", "hst", "+", "+", "+", "-", "-", "-", "Send", "RST", "Exit"};
+char keyLabel1[12][5] = {"min", "max", "int", "+", "+", "+", "-", "-", "-", "Send", "RST", "Exit"};
 uint16_t keyColor1[15] = {
                         TFT_BLACK, TFT_BLACK, TFT_BLACK,
                         TFT_RED, TFT_RED, TFT_RED,
@@ -302,8 +300,8 @@ void deserializeJson(String json) {
     loghost = root["loghost"].as<String>(), sizeof(loghost);
     httpsPort = root["httpsPort"].as<int>(), sizeof(httpsPort);
     interval = root["interval"].as<long>(), sizeof(interval);
-    temp_min = root["temp_min"].as<float>(), sizeof(temp_min);
-    temp_max = root["temp_max"].as<float>(), sizeof(temp_max);
+    temp_min = root["temp_min"].as<int>(), sizeof(temp_min);
+    temp_max = root["temp_max"].as<int>(), sizeof(temp_max);
     temp_dev = root["temp_dev"].as<float>(), sizeof(temp_dev);
     heater = root["heater"].as<bool>(), sizeof(heater);
     manual = root["manual"].as<bool>(), sizeof(manual);
@@ -327,8 +325,8 @@ void updateSettings() {
   loghost = server.arg("loghost");
   httpsPort = server.arg("httpsPort").toInt();
   interval = server.arg("interval").toInt();
-  temp_min = server.arg("temp_min").toFloat();
-  temp_max = server.arg("temp_max").toFloat();
+  temp_min = server.arg("temp_min").toInt();
+  temp_max = server.arg("temp_max").toInt();
   temp_dev = server.arg("temp_dev").toFloat();
   heater = server.arg("heater").toInt();
   manual = server.arg("manual").toInt();
@@ -753,22 +751,22 @@ void loop(void) {
     tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_BLACK);
 
-    tft.drawString("Temperature", 6, 20);
+    tft.drawString("Temp min", 6, 20);
     tft.fillRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_BLACK);
     tft.drawRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_WHITE);
-    tft.drawString("Interval", 6, 70);
+    tft.drawString("Temp max", 6, 70);
     tft.fillRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_BLACK);
     tft.drawRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_WHITE);
-    tft.drawString("Histeresis", 6, 120);
+    tft.drawString("Interval", 6, 120);
     tft.fillRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_BLACK);
     tft.drawRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_WHITE);
 
     tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_BLACK);
-    String numberBuffer1= String(maxc);
+    String numberBuffer1= String(temp_min);
     tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_BLACK);
-    String numberBuffer2= String(interval/60000);
+    String numberBuffer2= String(temp_max);
     tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_BLACK);
-    String numberBuffer3= String(hist);
+    String numberBuffer3= String(interval/60000);
 
     // Update the number display field
     tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
@@ -827,7 +825,7 @@ void loop(void) {
     tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_BLACK);
     String numberBuffer_a= String(temp_c);
     tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_BLACK);
-    String numberBuffer_b= String(maxc+hist);
+    String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
 
     // Update the number display field
     tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
@@ -887,50 +885,50 @@ void loop(void) {
 
         // if a numberpad button, append + to the numberBuffer
         // 3/6
-        if (b == 3 && maxc <= 36) {
-            maxc++;
+        if (b == 3 && temp_min <= 35) {
+            temp_min++;
             status(""); // Clear the old status
         }
-        if (b == 6 && maxc >= 16) {
-            maxc--;
+        if (b == 6 && temp_min >= 16) {
+            temp_min--;
             status(""); // Clear the old status
         }
 
         // 4/7
-        if (b == 4 && interval <= 840000) {
-            interval = interval + 60000;
+        if (b == 4 && temp_max <= 37) {
+            temp_max++;
             status(""); // Clear the old status
         }
-        if (b == 7 && interval >= 180000) {
-            interval = interval - 60000;
+        if (b == 7 && temp_max >= 16) {
+            temp_max--;
             status(""); // Clear the old status
         }
 
         //5/8
-        if (b == 5 && hist <= 6) {
-            hist++;
+        if (b == 5 && interval <= 840000) {
+            interval = interval + 60000;
             status(""); // Clear the old status
         }
-        if (b == 8 && hist >= 3) {
-            hist--;
+        if (b == 8 && interval >= 180000) {
+            interval = interval - 60000;
             status(""); // Clear the old status
         }
 
         // New
         if (b == 10) {
+          temp_min = 24;
+          temp_max = 26;
           interval = 300000;
-          maxc = 25;
-          hist = 3;
           status_timer = millis();
           status("Values cleared");
         }
 
         tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_BLACK);
-        String numberBuffer1= String(maxc);
+        String numberBuffer1= String(temp_min);
         tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_BLACK);
-        String numberBuffer2= String(interval/60000);
+        String numberBuffer2= String(temp_max);
         tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_BLACK);
-        String numberBuffer3= String(hist);
+        String numberBuffer3= String(interval/60000);
 
         // Update the number display field
         tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
@@ -950,9 +948,9 @@ void loop(void) {
         tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_BLACK);
 
         if (b == 9) {
-          Serial.println("maxc: " + numberBuffer1);
-          Serial.println("interval: " + numberBuffer2);
-          Serial.println("hist: " + numberBuffer3);
+          Serial.println("temp_min: " + numberBuffer1);
+          Serial.println("temp_max: " + numberBuffer2);
+          Serial.println("interval: " + numberBuffer3);
           status_timer = millis();
           status("Values sent to serial port");
         }
@@ -998,13 +996,13 @@ void loop(void) {
 
         // if a numberpad button, append + to the numberBuffer
         // 0/1
-        if (b == 0 && maxc <= 29) {
-            maxc++;
+        if (b == 0 && temp_max <= 29) {
+            temp_max++;
             status_timer = millis();
             status("Temperature raised");
         }
-        if (b == 1 && maxc >= 19) {
-            maxc--;
+        if (b == 1 && temp_max >= 19) {
+            temp_max--;
             status_timer = millis();
             status("Temperature lowered");
         }
@@ -1020,7 +1018,7 @@ void loop(void) {
         tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_BLACK);
         String numberBuffer_a= String(temp_c);
         tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_BLACK);
-        String numberBuffer_b= String(maxc+hist);
+        String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
 
         // Update the number display field
         tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
