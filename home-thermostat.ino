@@ -12,6 +12,7 @@
 #include "SSD1306Wire.h"
 #include <ArduinoJson.h>
 #include "Free_Fonts.h" // Include the header file attached to this sketch
+#include <time.h>
 
 //// define variables / hardware
 #define ONE_WIRE_BUS D3 // DS18B20 pin D4 = GPIO2
@@ -122,16 +123,17 @@ String str_c;
 String mode;
 String WiFi_Name;
 String hostname = "Donbot";
+//String outputJson;
 uint8_t sha1[20];
 float temp_c = 25;
 float temp_dev;
 String webString;
 String relaisState;
 String SHA1;
-String loghost;
+String loghost = "temperature.hugo.ro";
 String epochTime;
 uint16_t color;
-int httpsPort;
+int httpsPort = 443;
 int interval = 300000;
 int cursorX;
 int cursorY;
@@ -150,7 +152,7 @@ String numberBuffer3 = String(interval/60000);
 bool display_changed = true;
 bool setup_screen = false;
 // Create 12 keys for the setup keypad
-char keyLabel1[12][5] = {"min", "max", "int", "+", "+", "+", "-", "-", "-", "Send", "RST", "Exit"};
+char keyLabel1[12][5] = {"min", "max", "int", "+", "+", "+", "-", "-", "-", "Save", "RST", "Exit"};
 uint16_t keyColor1[15] = {
                         TFT_BLACK, TFT_BLACK, TFT_BLACK,
                         TFT_RED, TFT_RED, TFT_RED,
@@ -179,6 +181,23 @@ void getTemperature() {
   yield();
   temp_c = temp_c + temp_dev; // calibrating sensor
   Serial.println(temp_c);
+}
+
+void setClock() {
+  configTime(2 * 3600, 0, "pool.ntp.org", "de.pool.ntp.org");
+
+  Serial.print("Waiting for NTP time sync: ");
+  time_t now = time(nullptr);
+  while (now < 8 * 3600 * 2) {
+    delay(500);
+    Serial.print(".");
+    now = time(nullptr);
+  }
+  Serial.println("");
+  struct tm timeinfo;
+  gmtime_r(&now, &timeinfo);
+  Serial.print("Current time: ");
+  Serial.print(asctime(&timeinfo));
 }
 
 void switchRelais(String sw = "TOGGLE") { // if no parameter given, assume TOGGLE
@@ -239,6 +258,131 @@ void clearSpiffs() {
   server.send(200, "text/plain", "200: OK, SPIFFS formatted, settings cleared\n");
 }
 
+void deserializeJson(String json) {
+  Serial.print(F("= deserializeJson: "));
+  StaticJsonBuffer<512> jsonBuffer;
+  JsonObject &root = jsonBuffer.parseObject(json);
+  if (!root.success()) {
+    Serial.println(F("Error deserializing json!"));
+    emptyFile = true;
+    return;
+  } else {
+    SHA1 = root["SHA1"].as<String>();
+    loghost = root["loghost"].as<String>(), sizeof(loghost);
+    httpsPort = root["httpsPort"].as<int>(), sizeof(httpsPort);
+    interval = root["interval"].as<long>(), sizeof(interval);
+    temp_min = root["temp_min"].as<int>(), sizeof(temp_min);
+    temp_max = root["temp_max"].as<int>(), sizeof(temp_max);
+    temp_dev = root["temp_dev"].as<float>(), sizeof(temp_dev);
+    heater = root["heater"].as<bool>(), sizeof(heater);
+    manual = root["manual"].as<bool>(), sizeof(manual);
+    debug = root["debug"].as<bool>(), sizeof(debug);
+    if (debug)
+      Serial.println(F("OK."));
+    emptyFile = false; // mark file as not empty
+  }
+}
+
+void updateSettings() {
+  Serial.println("\n= updateSettings");
+
+  if (server.args() < 1 || server.args() > 10 || !server.arg("SHA1") || !server.arg("loghost")) {
+    server.send(200, "text/html", "400: Invalid Request\n");
+    return;
+  }
+  Serial.println("Got new settings from webform");
+
+  SHA1 = server.arg("SHA1");
+  loghost = server.arg("loghost");
+  httpsPort = server.arg("httpsPort").toInt();
+  interval = server.arg("interval").toInt();
+  temp_min = server.arg("temp_min").toInt();
+  temp_max = server.arg("temp_max").toInt();
+  temp_dev = server.arg("temp_dev").toFloat();
+  heater = server.arg("heater").toInt();
+  manual = server.arg("manual").toInt();
+  debug = server.arg("debug").toInt();
+
+  writeSettingsFile();
+  writeSettingsWeb();
+  server.send(200, "text/html", webString);
+}
+
+void readSettingsFile() {
+  Serial.println("= readSettingsFile");
+
+  File f = SPIFFS.open(sFile, "r"); // open file for reading
+  if (!f) {
+    Serial.println(F("Settings file read open failed"));
+    emptyFile = true;
+    return;
+  }
+  while (f.available()) {
+    String fileJson = f.readStringUntil('\n');
+    deserializeJson(fileJson);
+  }
+  f.close();
+}
+
+void writeSettingsFile() {
+  Serial.println("= writeSettingsFile: ");
+
+  String outputJson;
+  StaticJsonBuffer<256> jsonBuffer;
+  JsonObject &root = jsonBuffer.createObject();
+  root["SHA1"] = SHA1;
+  root["loghost"] = loghost;
+  root["httpsPort"] = httpsPort;
+  root["interval"] = interval;
+  root["temp_min"] = temp_min;
+  root["temp_max"] = temp_max;
+  root["temp_dev"] = temp_dev;
+  root["heater"] = heater;
+  root["manual"] = manual;
+  root["debug"] = debug;
+  root.printTo(outputJson);
+  //Serial.println("outputJson=|" + outputJson + "|");
+
+  // write JSON to file
+  File f = SPIFFS.open(sFile, "w"); // open file for writing
+  if (!f) {
+    Serial.println(F("Failed to create settings file"));
+    server.send(200, "text/html", "200: OK, File write open failed! settings not saved\n");
+    return;
+  }
+  if (f.print(outputJson) == 0) {
+    Serial.println(F("Failed to write to file"));
+    webString += "Failed to write to file\n";
+  } else {
+    Serial.println("OK");
+
+    // prepare webpage for output
+    webString = "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n";
+    webString += "<head>\n";
+    webString += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n";
+    webString += "\tbody { \n\t\tpadding: 3rem; \n\t\tfont-size: 16px;\n\t}\n";
+    webString += "\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n";
+    webString += "</head>\n<body>\n";
+    webString += "200: OK, Got new settings<br>\n";
+    webString += "Settings file updated.\n<br>\nBack to \n";
+    webString += "<form method='POST' action='https://temperature.hugo.ro'>";
+    webString += "\n<button name='device' value='";
+    webString += hostname;
+    webString += "'>Graph</button>\n";
+    webString += "</form>\n<br>\n";
+    webString += "JSON root: \n<br>\n";
+    webString += "<div id='debug'></div>\n";
+    webString += "<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n";
+    webString += "<script>\n\tvar root = ";
+    webString += outputJson;
+    webString += ";\n\tvar tbl = prettyPrint(root);\n";
+    webString += "\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n";
+    webString += "</body>\n";
+    emptyFile = false; // mark file as not empty
+  }
+  f.close();
+}
+
 int readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
   Serial.println("= readSettingsWeb");
   String pathQuery = "/settings-";
@@ -271,82 +415,10 @@ int readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
   return httpCode;
 }
 
-void readSettingsFile() {
-  Serial.println("= readSettingsFile");
+void writeSettingsWeb() {
+  Serial.println("= writeSettingsWeb: ");
 
-  File f = SPIFFS.open(sFile, "r"); // open file for reading
-  if (!f) {
-    Serial.println(F("Settings file read open failed"));
-    emptyFile = true;
-    return;
-  }
-  while (f.available()) {
-    String fileJson = f.readStringUntil('\n');
-    deserializeJson(fileJson);
-  }
-  f.close();
-}
-
-void deserializeJson(String json) {
-  // deserialize JSON
-  StaticJsonBuffer<512> jsonBuffer;
-  JsonObject &root = jsonBuffer.parseObject(json);
-  if (!root.success()) {
-    Serial.println(F("Error deserializing json!"));
-    emptyFile = true;
-    return;
-  } else {
-    SHA1 = root["SHA1"].as<String>();
-    loghost = root["loghost"].as<String>(), sizeof(loghost);
-    httpsPort = root["httpsPort"].as<int>(), sizeof(httpsPort);
-    interval = root["interval"].as<long>(), sizeof(interval);
-    temp_min = root["temp_min"].as<int>(), sizeof(temp_min);
-    temp_max = root["temp_max"].as<int>(), sizeof(temp_max);
-    temp_dev = root["temp_dev"].as<float>(), sizeof(temp_dev);
-    heater = root["heater"].as<bool>(), sizeof(heater);
-    manual = root["manual"].as<bool>(), sizeof(manual);
-    debug = root["debug"].as<bool>(), sizeof(debug);
-    if (debug)
-      Serial.println(F("Deserialized JSON"));
-    emptyFile = false; // mark file as not empty
-  }
-}
-
-void updateSettings() {
-  Serial.println("\n= updateSettings");
-
-  if (server.args() < 1 || server.args() > 10 || !server.arg("SHA1") || !server.arg("loghost")) {
-    server.send(200, "text/html", "400: Invalid Request\n");
-    return;
-  }
-  Serial.println("Got new settings from webform");
-
-  SHA1 = server.arg("SHA1");
-  loghost = server.arg("loghost");
-  httpsPort = server.arg("httpsPort").toInt();
-  interval = server.arg("interval").toInt();
-  temp_min = server.arg("temp_min").toInt();
-  temp_max = server.arg("temp_max").toInt();
-  temp_dev = server.arg("temp_dev").toFloat();
-  heater = server.arg("heater").toInt();
-  manual = server.arg("manual").toInt();
-  debug = server.arg("debug").toInt();
-
-  writeSettingsFile();
-  server.send(200, "text/html", webString);
-}
-
-void writeSettingsFile() {
-  Serial.print("= writeSettingsFile: ");
-
-  File f = SPIFFS.open(sFile, "w"); // open file for writing
-  if (!f) {
-    Serial.println(F("Failed to create settings file"));
-    server.send(200, "text/html", "200: OK, File write open failed! settings not saved\n");
-    return;
-  }
-
-  // serialize JSON
+  String outputJson;
   StaticJsonBuffer<256> jsonBuffer;
   JsonObject &root = jsonBuffer.createObject();
   root["SHA1"] = SHA1;
@@ -359,45 +431,57 @@ void writeSettingsFile() {
   root["heater"] = heater;
   root["manual"] = manual;
   root["debug"] = debug;
-  String outputJson;
   root.printTo(outputJson);
+  //outputJson = serializeJson();
+  //String uploadJson = urlEncode(outputJson);
   if (debug) {
-    Serial.print(F("- outputJson: "));
-    Serial.println(outputJson);
+    Serial.print(F("Connecting to https://"));
+    Serial.println(loghost + ":" + httpsPort);
+    //Serial.println("outputJson=|" + outputJson + "|");
   }
 
-  // write JSON to file
-  if (root.printTo(f) == 0) {
-    Serial.println(F("Failed to write to file"));
-    webString += "Failed to write to file\n";
+  HTTPClient http;
+  //WiFiClientSecure client;
+  BearSSL::WiFiClientSecure *client = new BearSSL::WiFiClientSecure ;
+
+  bool mfln = client->probeMaxFragmentLength(loghost, 443, 1024);
+  Serial.printf("Maximum fragment Length negotiation supported: %s\n", mfln ? "yes" : "no");
+  if (mfln) {
+    client->setBufferSizes(1024, 1024);
+  }
+
+  from_str();
+  client->setFingerprint(sha1);
+  //String msg = String("device=" + hostname + "&uploadJson=" + outputJson);
+  String msg = String("device=" + hostname + "&uploadJson=" + urlEncode(outputJson));
+  if (debug) {
+    Serial.print(F("Posting data: "));
+    Serial.println(msg);
+  }
+
+  if (http.begin(*client, loghost, httpsPort, "/index.php", true)) {
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    http.addHeader("User-Agent", "BuildFailureDetectorESP8266");
+    http.addHeader("Host", String(loghost + ":" + httpsPort));
+    http.addHeader("Content-Length", String(msg.length()));
+
+    int  httpCode = http.POST(msg);
+    if (httpCode > 0) {
+      // HTTP header has been send and Server response header has been handled
+      Serial.printf("[HTTPS] code: %d\n", httpCode);
+
+      // file found at server
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        String payload = http.getString();
+        //Serial.println(payload);
+      }
+    } else {
+      Serial.println("[HTTPS] failed, error: " + String(httpCode) + " = " +  http.errorToString(httpCode).c_str());
+    }
+    http.end();
   } else {
-    Serial.println("OK");
-
-    // prepare webpage for output
-    webString = "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n";
-    webString += "<head>\n";
-    webString += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n";
-    webString += "\tbody { \n\t\tpadding: 3rem; \n\t\tfont-size: 16px;\n\t}\n";
-    webString += "\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n";
-    webString += "</head>\n<body>\n";
-    webString += "200: OK, Got new settings<br>\n";
-    webString += "Settings file updated.\n<br>\nBack to \n";
-    webString += "<form method='POST' action='https://temperature.hugo.ro'>";
-    webString += "\n<button name='device' value='";
-    webString += hostname;
-    webString += "'>Graph</button>\n";
-    webString += "</form>\n<br>\n";
-    webString += "JSON root: \n<br>\n";
-    webString += "<div id='debug'></div>\n";
-    webString += "<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n";
-    webString += "<script>\n\tvar root = ";
-    webString += outputJson;
-    webString += ";\n\tvar tbl = prettyPrint(root);\n";
-    webString += "\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n";
-    webString += "</body>\n";
-    emptyFile = false; // mark file as not empty
+    Serial.printf("[HTTPS] Unable to connect\n");
   }
-  f.close();
 }
 
 //// local webserver handlers / send data to logserver
@@ -444,7 +528,7 @@ void logToWebserver() {
     Serial.println(pathQuery);
   }
 
-  BearSSL::WiFiClientSecure webClient;
+  WiFiClientSecure webClient;
   from_str();
   webClient.setFingerprint(sha1);
   HTTPClient https;
@@ -533,6 +617,40 @@ void printProgress (unsigned long percentage) {
   fflush (stdout);
 }
 
+String urlEncode(String str)
+{
+  String encodedString="";
+  char c;
+  char code0;
+  char code1;
+  char code2;
+  for (int i =0; i < str.length(); i++){
+    c=str.charAt(i);
+    if (c == ' '){
+      encodedString+= '+';
+    } else if (isalnum(c)){
+      encodedString+=c;
+    } else{
+      code1=(c & 0xf)+'0';
+      if ((c & 0xf) >9){
+          code1=(c & 0xf) - 10 + 'A';
+      }
+      c=(c>>4)&0xf;
+      code0=c+'0';
+      if (c > 9){
+          code0=c - 10 + 'A';
+      }
+      code2='\0';
+      encodedString+='%';
+      encodedString+=code0;
+      encodedString+=code1;
+      //encodedString+=code2;
+    }
+    yield();
+  }
+  return encodedString;
+}
+
 //// get internet IP (for display)
 void getInetIP() {
   Serial.print(F("= getInetIP"));
@@ -560,7 +678,7 @@ void getInetIP() {
   Serial.println();
 }
 
-//// convert sizes in bytes to KB and MB
+//// convert sizes from bytes to KB and MB
 String formatBytes(size_t bytes) {
   if (bytes < 1024) {
     return String(bytes) + "B";
@@ -815,7 +933,7 @@ void loop(void) {
     tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_BLACK);
 
-    tft.drawString("Current Temperature", 6, 20);
+    tft.drawString("Room Temperature", 6, 20);
     tft.fillRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_BLACK);
     tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
     tft.drawString("Target Temperature", 6, 120);
@@ -952,7 +1070,9 @@ void loop(void) {
           Serial.println("temp_max: " + numberBuffer2);
           Serial.println("interval: " + numberBuffer3);
           status_timer = millis();
-          status("Values sent to serial port");
+          writeSettingsFile();
+          writeSettingsWeb();
+          status("Values saved");
         }
 
         // Exit Setup
@@ -1051,6 +1171,7 @@ void loop(void) {
   unsigned long presTime = millis();
   unsigned long passed = presTime - prevTime;
   if (passed > interval) {
+    display_changed = true;
     Serial.println(F("\nInterval passed"));
     getInetIP();
     if (readSettingsWeb() != 200) // first, try reading settings from webserver
@@ -1082,4 +1203,5 @@ void loop(void) {
   }
   server.handleClient();
   status_clear();
+  //setClock();
 } // void loop() END
