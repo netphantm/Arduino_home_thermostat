@@ -49,9 +49,9 @@
 #define KEY_N_TEXTSIZE 1   // Font size multiplier
 
 // Numeric display box N1 size and location
-#define DISP1_N_X 65
+#define DISP1_N_X 72
 #define DISP1_N_Y 40
-#define DISP1_N_W 105
+#define DISP1_N_W 96
 #define DISP1_N_H 45
 #define DISP1_N_TSIZE 5
 
@@ -63,9 +63,9 @@
 #define DISP2_N_TSIZE 5
 
 // Numeric display box N3 size and location
-#define DISP3_N_X 80
+#define DISP3_N_X 81
 #define DISP3_N_Y 210
-#define DISP3_N_W 80
+#define DISP3_N_W 78
 #define DISP3_N_H 45
 #define DISP3_N_TSIZE 5
 // ----- NORMAL DISPLAY END ----- //
@@ -709,7 +709,7 @@ void status(const char *msg) {
 }
 
 void status_clear() {
-  if (status_timer <= (millis() - 1000)) {
+  if (status_timer < (millis() - 1000)) {
     status(""); // Clear the old status
   }
 }
@@ -915,13 +915,15 @@ void loop(void) {
       for (uint8_t col = 0; col < 4; col++) {
         uint8_t b = col + row * 4;
 
-        tft.setFreeFont(Bold_FONT);
+        if (b > 11) tft.setFreeFont(Italic_FONT);
+        else tft.setFreeFont(Bold_FONT);
 
         key[b].initButton(&tft, KEY_S_X + col * (KEY_S_W + KEY_S_SPACING_X),
                           KEY_S_Y + row * (KEY_S_H + KEY_S_SPACING_Y), // x, y, w, h, outline, fill, text
                           KEY_S_W, KEY_S_H, TFT_WHITE, keyColor1[b], TFT_WHITE,
                           keyLabel1[b], KEY_S_TEXTSIZE);
         key[b].drawButton();
+        tft.setFreeFont(Italic_FONT);
       }
     }
     // ----- SETUP DISPLAY INIT END ----- //
@@ -991,13 +993,15 @@ void loop(void) {
       for (uint8_t col = 0; col < 3; col++) {
         uint8_t b = col + row * 3;
 
-        tft.setFreeFont(Bold_FONT);
+        if (b > 1) tft.setFreeFont(Italic_FONT);
+        else tft.setFreeFont(Bold_FONT);
 
         key[b].initButton(&tft, KEY_N_X + col * (KEY_N_W + KEY_N_SPACING_X),
                           KEY_N_Y + row * (KEY_N_H + KEY_N_SPACING_Y), // x, y, w, h, outline, fill, text
                           KEY_N_W, KEY_N_H, TFT_WHITE, keyColor2[b], TFT_WHITE,
                           keyLabel2[b], KEY_N_TEXTSIZE);
         key[b].drawButton();
+        tft.setFreeFont(Italic_FONT);
       }
     }
     // ----- DISPLAY ROUTINE INIT END ----- //
@@ -1126,7 +1130,7 @@ void loop(void) {
           writeSettingsFile();
           writeSettingsWeb();
           status_timer = millis();
-          status("Values saved");
+          status("Settings saved");
         }
 
         if (b == 15) { // fourth button last row
@@ -1135,7 +1139,7 @@ void loop(void) {
           setup_screen = false;
           display_changed = true;
           status("Exit Setup screen");
-          delay(300);
+          delay(500);
         }
 
         delay(10); // UI debouncing
@@ -1186,7 +1190,7 @@ void loop(void) {
           setup_screen = true;
           display_changed = true;
           status("Enter Setup screen");
-          delay(300);
+          delay(500);
         }
 
         tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_DARKGREY);
