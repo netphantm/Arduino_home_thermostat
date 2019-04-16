@@ -36,38 +36,43 @@
 
 // ----- NORMAL DISPLAY ----- //
 // Keypad start position, key sizes and spacing
-#define KEY_N_X 42 // Centre of key
+#define KEY_N_X 40 // Centre of key
 #define KEY_N_Y 282 //302
-#define KEY_N_W 67 // Width and height
+#define KEY_N_W 75 // Width and height
 #define KEY_N_H 30
-#define KEY_N_SPACING_X 10 // X and Y gap
+#define KEY_N_SPACING_X 5 // X and Y gap
 #define KEY_N_SPACING_Y 7
 #define KEY_N_TEXTSIZE 1   // Font size multiplier
 
 // Numeric display box N1 size and location
-#define DISP1_N_X 70
-#define DISP1_N_Y 55
-#define DISP1_N_W 100
+#define DISP1_N_X 65
+#define DISP1_N_Y 40
+#define DISP1_N_W 105
 #define DISP1_N_H 45
 #define DISP1_N_TSIZE 5
-#define DISP1_N_TCOLOR TFT_CYAN
 
 // Numeric display box N2 size and location
 #define DISP2_N_X 95
-#define DISP2_N_Y 155
+#define DISP2_N_Y 125
 #define DISP2_N_W 50
 #define DISP2_N_H 45
 #define DISP2_N_TSIZE 5
-#define DISP2_N_TCOLOR TFT_CYAN
+
+// Numeric display box N3 size and location
+#define DISP3_N_X 80
+#define DISP3_N_Y 210
+#define DISP3_N_W 80
+#define DISP3_N_H 45
+#define DISP3_N_TSIZE 5
 // ----- NORMAL DISPLAY END ----- //
 
 // ----- SETUP DISPLAY ----- //
 // Keypad start position, key sizes and spacing
-#define KEY_S_X 42 // Centre of key
+#define KEY_S_X 30 // Centre of key
 #define KEY_S_Y 171 //191
-#define KEY_S_W 67 // Width and height
-#define KEY_S_H 30
-#define KEY_S_SPACING_X 10 // X and Y gap
+#define KEY_S_W 58 // Width and height
+#define KEY_S_H 29
+#define KEY_S_SPACING_X 2 // X and Y gap
 #define KEY_S_SPACING_Y 7
 #define KEY_S_TEXTSIZE 1   // Font size multiplier
 
@@ -77,7 +82,6 @@
 #define DISP1_S_W 53
 #define DISP1_S_H 45
 #define DISP1_S_TSIZE 3
-#define DISP1_S_TCOLOR TFT_CYAN
 
 // Numeric display box S2 size and location
 #define DISP2_S_X 181
@@ -85,7 +89,6 @@
 #define DISP2_S_W 53
 #define DISP2_S_H 45
 #define DISP2_S_TSIZE 3
-#define DISP2_S_TCOLOR TFT_CYAN
 
 // Numeric display box S3 size and location
 #define DISP3_S_X 181
@@ -93,12 +96,18 @@
 #define DISP3_S_W 53
 #define DISP3_S_H 45
 #define DISP3_S_TSIZE 3
-#define DISP3_S_TCOLOR TFT_CYAN
+
+// Numeric display box S3 size and location
+#define DISP4_S_X 181
+#define DISP4_S_Y 105
+#define DISP4_S_W 53
+#define DISP4_S_H 45
+#define DISP4_S_TSIZE 3
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 // ----- SETUP DISPLAY END ----- //
 
 // Number length, buffer for storing it and character index
-#define NUM_LEN 12
+#define NUM_LEN 16
 uint8_t numberIndex = 0;
 
 // We have a status line for messages
@@ -108,7 +117,7 @@ uint8_t numberIndex = 0;
 // from thermostat.ino
 const size_t bufferSize = JSON_OBJECT_SIZE(6) + 160;
 const static String sFile = "/settings.txt";  // SPIFFS file name must start with "/".
-const static String configHost = "http://temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
+const static String configHost = "temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
 unsigned long uptime = (millis() / 1000 );
 unsigned long status_timer = millis();
 unsigned long prevTime = 0;
@@ -130,7 +139,7 @@ float temp_dev;
 String webString;
 String relaisState;
 String SHA1;
-String loghost = "temperature.hugo.ro";
+String loghost;
 String epochTime;
 uint16_t color;
 int httpsPort = 443;
@@ -149,15 +158,16 @@ int pressed = 0;
 String numberBuffer1 = String(temp_min);
 String numberBuffer2 = String(temp_max);
 String numberBuffer3 = String(interval/60000);
+String numberBuffer4 = String(manual);
 bool display_changed = true;
 bool setup_screen = false;
-// Create 12 keys for the setup keypad
-char keyLabel1[12][5] = {"min", "max", "int", "+", "+", "+", "-", "-", "-", "Save", "RST", "Exit"};
-uint16_t keyColor1[15] = {
-                        TFT_BLACK, TFT_BLACK, TFT_BLACK,
-                        TFT_RED, TFT_RED, TFT_RED,
-                        TFT_BLUE, TFT_BLUE, TFT_BLUE,
-                        TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN
+// Create 16 keys for the setup keypad
+char keyLabel1[16][5] = {"min", "max", "rel", "int", "+", "+", "On", "+", "-", "-", "Off", "-", "Save", "RST", "Auto", "Exit"};
+uint16_t keyColor1[16] = {
+                        TFT_BLACK, TFT_BLACK, TFT_BLACK, TFT_BLACK,
+                        TFT_RED, TFT_RED, TFT_RED, TFT_RED,
+                        TFT_BLUE, TFT_BLUE, TFT_BLUE, TFT_BLUE,
+                        TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN
                         };
 // Create 3 keys for the display keypad
 char keyLabel2[3][6] = {"+", "-", "Setup"};
@@ -167,7 +177,7 @@ uint16_t keyColor2[15] = {
                         TFT_DARKGREEN
                         };
 // Invoke the TFT_eSPI button class and create all the button objects
-TFT_eSPI_Button key[12];
+TFT_eSPI_Button key[16];
 
 // from thermostat.ino
 //// read temperature from sensor / switch relay on or off
@@ -436,7 +446,7 @@ void writeSettingsWeb() {
   //String uploadJson = urlEncode(outputJson);
   if (debug) {
     Serial.print(F("Connecting to https://"));
-    Serial.println(loghost + ":" + httpsPort);
+    Serial.println(configHost + ":" + httpsPort);
     //Serial.println("outputJson=|" + outputJson + "|");
   }
 
@@ -444,7 +454,7 @@ void writeSettingsWeb() {
   //WiFiClientSecure client;
   BearSSL::WiFiClientSecure *client = new BearSSL::WiFiClientSecure ;
 
-  bool mfln = client->probeMaxFragmentLength(loghost, 443, 1024);
+  bool mfln = client->probeMaxFragmentLength(configHost, 443, 1024);
   Serial.printf("Maximum fragment Length negotiation supported: %s\n", mfln ? "yes" : "no");
   if (mfln) {
     client->setBufferSizes(1024, 1024);
@@ -459,10 +469,10 @@ void writeSettingsWeb() {
     Serial.println(msg);
   }
 
-  if (http.begin(*client, loghost, httpsPort, "/index.php", true)) {
+  if (http.begin(*client, configHost, httpsPort, "/index.php", true)) {
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     http.addHeader("User-Agent", "BuildFailureDetectorESP8266");
-    http.addHeader("Host", String(loghost + ":" + httpsPort));
+    http.addHeader("Host", String(configHost + ":" + httpsPort));
     http.addHeader("Content-Length", String(msg.length()));
 
     int  httpCode = http.POST(msg);
@@ -851,6 +861,7 @@ void setup() {
   server.on("/clear", clearSpiffs);
 
   server.begin();
+  debug_vars();
 } // void setup() END
 
 //------------------------------------------------------------------------------------------
@@ -885,11 +896,13 @@ void loop(void) {
     String numberBuffer2= String(temp_max);
     tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_BLACK);
     String numberBuffer3= String(interval/60000);
+    //tft.fillRect(DISP4_S_X + 4, DISP4_S_Y + 1, DISP4_S_W - 5, DISP4_S_H - 2, TFT_BLACK);
+    //String numberBuffer4= String(manual);
 
     // Update the number display field
     tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
     tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-    tft.setTextColor(DISP1_S_TCOLOR);  // Set the font color
+    tft.setTextColor(TFT_CYAN);  // Set the font color
     // Draw the string, the value returned is the width in pixels
     int xwidth1 = tft.drawString(numberBuffer1, DISP1_S_X + 4, DISP1_S_Y + 9);
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
@@ -902,11 +915,15 @@ void loop(void) {
     int xwidth3 = tft.drawString(numberBuffer3, DISP3_S_X + 4, DISP3_S_Y + 9);
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_BLACK);
+    // Draw the string, the value returned is the width in pixels
+    //int xwidth4 = tft.drawString(numberBuffer4, DISP4_S_X + 4, DISP4_S_Y + 9);
+    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+    //tft.fillRect(DISP4_S_X + 4 + xwidth4, DISP4_S_Y + 1, DISP4_S_W - xwidth4 - 5, DISP4_S_H - 2, TFT_BLACK);
 
     // Draw keypad Setup
     for (uint8_t row = 0; row < 4; row++) {
-      for (uint8_t col = 0; col < 3; col++) {
-        uint8_t b = col + row * 3;
+      for (uint8_t col = 0; col < 4; col++) {
+        uint8_t b = col + row * 4;
 
         tft.setFreeFont(Bold_FONT);
 
@@ -916,8 +933,8 @@ void loop(void) {
                           keyLabel1[b], KEY_S_TEXTSIZE);
         key[b].drawButton();
       }
-    // ----- SETUP DISPLAY INIT END ----- //
     }
+    // ----- SETUP DISPLAY INIT END ----- //
     display_changed = false;
     IamHere = "display_changed && setup_screen";
   }
@@ -933,30 +950,51 @@ void loop(void) {
     tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_BLACK);
 
-    tft.drawString("Room Temperature", 6, 20);
+    tft.drawString("Room Temperature", 6, 10);
     tft.fillRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_BLACK);
     tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
-    tft.drawString("Target Temperature", 6, 120);
+    tft.drawString("Target Temperature", 6, 95);
     tft.fillRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_BLACK);
     tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
+    String state = manual ? "manual" : "automatic";
+    tft.drawString(String("Relais state: " + state), 6, 180);
+    tft.fillRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_BLACK);
+    tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
 
     tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_BLACK);
     String numberBuffer_a= String(temp_c);
     tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_BLACK);
     String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
+    tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_BLACK);
+    String numberBuffer_c= String(relaisState);
 
     // Update the number display field
     tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
     tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-    tft.setTextColor(DISP1_N_TCOLOR);  // Set the font color
+    if (temp_c < temp_min) 
+      tft.setTextColor(TFT_BLUE);
+    if (temp_c > temp_max) 
+      tft.setTextColor(TFT_GREEN);
+    if (temp_c >= temp_min && temp_c <= temp_max) 
+      tft.setTextColor(TFT_ORANGE);
     // Draw the string, the value returned is the width in pixels
     int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_BLACK);
+    tft.setTextColor(TFT_CYAN);
     // Draw the string, the value returned is the width in pixels
     int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_BLACK);
+    if (relaisState == "ON")
+      tft.setTextColor(TFT_GREEN);
+    if (relaisState == "OFF")
+      tft.setTextColor(TFT_ORANGE);
+    // Draw the string, the value returned is the width in pixels
+    int xwidth_c = tft.drawString(numberBuffer_c, DISP3_N_X + 4, DISP3_N_Y + 9);
+    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+    tft.fillRect(DISP3_N_X + 4 + xwidth_c, DISP3_N_Y + 1, DISP3_N_W - xwidth_c - 5, DISP3_N_H - 2, TFT_BLACK);
+    tft.setTextColor(TFT_CYAN);
 
     // Draw keypad Display
     for (uint8_t row = 0; row < 1; row++) {
@@ -986,7 +1024,7 @@ void loop(void) {
     pressed = tft.getTouch(&t_x, &t_y);
 
     // Check if any key coordinate boxes contain the touch coordinates
-    for (uint8_t b = 3; b < 12; b++) {
+    for (uint8_t b = 4; b < 16; b++) {
       if (key[b].contains(t_x, t_y)) {
         key[b].press(true);  // tell the button it is pressed
       } else {
@@ -995,50 +1033,70 @@ void loop(void) {
     }
 
     // Check if any key has changed state
-    for (uint8_t b = 3; b < 12; b++) {
+    for (uint8_t b = 4; b < 16; b++) {
       tft.setFreeFont(Bold_FONT);
       if (key[b].justReleased()) key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
         key[b].drawButton(true);  // draw invert
 
         // if a numberpad button, append + to the numberBuffer
-        // 3/6
-        if (b == 3 && temp_min <= 35) {
+        // 4/8
+        if (b == 4 && temp_min <= 35) {
             temp_min++;
-            status(""); // Clear the old status
+            status_timer = millis();
+            status("Increased temp min");
         }
-        if (b == 6 && temp_min >= 16) {
+        if (b == 8 && temp_min >= 16) {
             temp_min--;
-            status(""); // Clear the old status
+            status_timer = millis();
+            status("Decreased temp min");
         }
 
-        // 4/7
-        if (b == 4 && temp_max <= 37) {
+        // 5/9
+        if (b == 5 && temp_max <= 37) {
             temp_max++;
-            status(""); // Clear the old status
+            status_timer = millis();
+            status("Increased temp max");
         }
-        if (b == 7 && temp_max >= 16) {
+        if (b == 9 && temp_max >= 16) {
             temp_max--;
-            status(""); // Clear the old status
+            status_timer = millis();
+            status("Decreased temp max");
         }
 
-        //5/8
-        if (b == 5 && interval <= 840000) {
-            interval = interval + 60000;
-            status(""); // Clear the old status
+        // 6/10
+        if (b == 6) {
+            manual = true;
+            switchRelais("ON");
+            status_timer = millis();
+            status("Turned Relais ON");
         }
-        if (b == 8 && interval >= 180000) {
-            interval = interval - 60000;
-            status(""); // Clear the old status
-        }
-
-        // New
         if (b == 10) {
+            manual = true;
+            switchRelais("OFF");
+            status_timer = millis();
+            status("Turned Relais OFF");
+        }
+
+        // 7/11
+        if (b == 7 && interval <= 840000) {
+            interval = interval + 60000;
+            status_timer = millis();
+            status("Increased interval");
+        }
+        if (b == 11 && interval >= 180000) {
+            interval = interval - 60000;
+            status_timer = millis();
+            status("Decreased interval");
+        }
+
+        // Reset settings
+        if (b == 13) {
           temp_min = 24;
           temp_max = 26;
           interval = 300000;
           status_timer = millis();
-          status("Values cleared");
+          status("Values reset");
         }
 
         tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_BLACK);
@@ -1051,7 +1109,7 @@ void loop(void) {
         // Update the number display field
         tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
         tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-        tft.setTextColor(DISP1_S_TCOLOR);  // Set the font color
+        tft.setTextColor(TFT_CYAN);  // Set the font color
         // Draw the string, the value returned is the width in pixels
         int xwidth1 = tft.drawString(numberBuffer1, DISP1_S_X + 4, DISP1_S_Y + 9);
         // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
@@ -1065,22 +1123,31 @@ void loop(void) {
         // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
         tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_BLACK);
 
-        if (b == 9) {
+        // Save settings
+        if (b == 12) {
           Serial.println("temp_min: " + numberBuffer1);
           Serial.println("temp_max: " + numberBuffer2);
           Serial.println("interval: " + numberBuffer3);
-          status_timer = millis();
           writeSettingsFile();
           writeSettingsWeb();
+          status_timer = millis();
           status("Values saved");
         }
 
-        // Exit Setup
-        if (b == 11) {
-          status("Exit Setup screen");
+        // Automatic mode ON
+        if (b == 14) {
+          manual = false;
+          autoSwitchRelais();
+          status_timer = millis();
+          status("Automatic mode On");
+        }
+
+        // Exit Setup Screen
+        if (b == 15) {
           Serial.println(F("Exit Setup screen"));
           setup_screen = false;
           display_changed = true;
+          status("Exit Setup screen");
           delay(300);
         }
 
@@ -1143,7 +1210,7 @@ void loop(void) {
         // Update the number display field
         tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
         tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-        tft.setTextColor(DISP1_N_TCOLOR);  // Set the font color
+        tft.setTextColor(TFT_CYAN);  // Set the font color
         // Draw the string, the value returned is the width in pixels
         int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
         // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
