@@ -1,3 +1,7 @@
+//------------------------------------------------------------------------------------------
+// TODO: save relais state in manual mode
+//------------------------------------------------------------------------------------------
+
 #include "FS.h"
 #include <SPI.h>
 #include <TFT_eSPI.h>      // Hardware-specific library
@@ -293,6 +297,28 @@ void deserializeJson(String json) {
   }
 }
 
+String serializeJson() {
+  StaticJsonBuffer<256> jsonBuffer;
+  JsonObject &root = jsonBuffer.createObject();
+  root["SHA1"] = SHA1;
+  root["loghost"] = loghost;
+  root["httpsPort"] = httpsPort;
+  root["interval"] = interval;
+  root["temp_min"] = temp_min;
+  root["temp_max"] = temp_max;
+  root["temp_dev"] = temp_dev;
+  root["heater"] = heater;
+  root["manual"] = manual;
+  root["debug"] = debug;
+  String outputJson;
+  root.printTo(outputJson);
+  if (debug) {
+    Serial.print(F("- serializeJson: "));
+    Serial.println("|" + outputJson + "|");
+  }
+  return outputJson;
+}
+
 void updateSettings() {
   Serial.println("\n= updateSettings");
 
@@ -337,23 +363,8 @@ void readSettingsFile() {
 void writeSettingsFile() {
   Serial.println("= writeSettingsFile: ");
 
-  String outputJson;
-  StaticJsonBuffer<256> jsonBuffer;
-  JsonObject &root = jsonBuffer.createObject();
-  root["SHA1"] = SHA1;
-  root["loghost"] = loghost;
-  root["httpsPort"] = httpsPort;
-  root["interval"] = interval;
-  root["temp_min"] = temp_min;
-  root["temp_max"] = temp_max;
-  root["temp_dev"] = temp_dev;
-  root["heater"] = heater;
-  root["manual"] = manual;
-  root["debug"] = debug;
-  root.printTo(outputJson);
-  //Serial.println("outputJson=|" + outputJson + "|");
+  String outputJson = serializeJson();
 
-  // write JSON to file
   File f = SPIFFS.open(sFile, "w"); // open file for writing
   if (!f) {
     Serial.println(F("Failed to create settings file"));
@@ -428,27 +439,7 @@ int readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
 void writeSettingsWeb() {
   Serial.println("= writeSettingsWeb: ");
 
-  String outputJson;
-  StaticJsonBuffer<256> jsonBuffer;
-  JsonObject &root = jsonBuffer.createObject();
-  root["SHA1"] = SHA1;
-  root["loghost"] = loghost;
-  root["httpsPort"] = httpsPort;
-  root["interval"] = interval;
-  root["temp_min"] = temp_min;
-  root["temp_max"] = temp_max;
-  root["temp_dev"] = temp_dev;
-  root["heater"] = heater;
-  root["manual"] = manual;
-  root["debug"] = debug;
-  root.printTo(outputJson);
-  //outputJson = serializeJson();
-  //String uploadJson = urlEncode(outputJson);
-  if (debug) {
-    Serial.print(F("Connecting to https://"));
-    Serial.println(configHost + ":" + httpsPort);
-    Serial.println("outputJson=|" + outputJson + "|");
-  }
+  String outputJson = serializeJson();
 
   HTTPClient http;
   BearSSL::WiFiClientSecure *client = new BearSSL::WiFiClientSecure ;
