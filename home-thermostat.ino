@@ -136,7 +136,6 @@ String str_c;
 String mode;
 String WiFi_Name;
 String hostname = "Donbot";
-//String outputJson;
 uint8_t sha1[20];
 float temp_c = 25;
 float temp_dev;
@@ -166,7 +165,7 @@ String numberBuffer4 = String(manual);
 bool display_changed = true;
 bool setup_screen = false;
 // Create 16 keys for the setup keypad
-char keyLabel1[16][5] = {"min", "max", "rel", "int", "+", "+", "On", "+", "-", "-", "Off", "-", "Save", "RST", "Auto", "Exit"};
+char keyLabel1[16][5] = {"rel", "min", "max", "int", "On", "+", "+", "+", "Off", "-", "-", "-", "Auto", "RST", "Save", "Exit"};
 uint16_t keyColor1[16] = {
                         TFT_DARKGREY, TFT_DARKGREY, TFT_DARKGREY, TFT_DARKGREY,
                         TFT_RED, TFT_RED, TFT_RED, TFT_RED,
@@ -1031,45 +1030,45 @@ void loop(void) {
         key[b].drawButton(true);  // draw invert
 
         // if a numberpad button, append + to the numberBuffer
-        // 4/8
-        if (b == 4 && temp_min <= 35) {
-            temp_min++;
-            status_timer = millis();
-            status("Increased temp min");
-        }
-        if (b == 8 && temp_min >= 16) {
-            temp_min--;
-            status_timer = millis();
-            status("Decreased temp min");
-        }
-
-        // 5/9
-        if (b == 5 && temp_max <= 37) {
-            temp_max++;
-            status_timer = millis();
-            status("Increased temp max");
-        }
-        if (b == 9 && temp_max >= 16) {
-            temp_max--;
-            status_timer = millis();
-            status("Decreased temp max");
-        }
-
-        // 6/10
-        if (b == 6) {
+        // 4/8 - first col
+        if (b == 4) {
             manual = true;
             switchRelais("ON");
             status_timer = millis();
             status("Turned Relais ON");
         }
-        if (b == 10) {
+        if (b == 8) {
             manual = true;
             switchRelais("OFF");
             status_timer = millis();
             status("Turned Relais OFF");
         }
 
-        // 7/11
+        // 5/9 - second col
+        if (b == 5 && temp_min <= 35) {
+            temp_min++;
+            status_timer = millis();
+            status("Increased temp min");
+        }
+        if (b == 9 && temp_min >= 16) {
+            temp_min--;
+            status_timer = millis();
+            status("Decreased temp min");
+        }
+
+        // 6/10 - third col
+        if (b == 6 && temp_max <= 37) {
+            temp_max++;
+            status_timer = millis();
+            status("Increased temp max");
+        }
+        if (b == 10 && temp_max >= 16) {
+            temp_max--;
+            status_timer = millis();
+            status("Decreased temp max");
+        }
+
+        // 7/11 - fourth col
         if (b == 7 && interval <= 840000) {
             interval = interval + 60000;
             status_timer = millis();
@@ -1081,8 +1080,8 @@ void loop(void) {
             status("Decreased interval");
         }
 
-        // Reset settings
-        if (b == 13) {
+        if (b == 13) { // second button last row
+          // Reset settings
           temp_min = 24;
           temp_max = 26;
           interval = 300000;
@@ -1114,27 +1113,24 @@ void loop(void) {
         // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
         tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_DARKGREY);
 
-        // Save settings
-        if (b == 12) {
-          Serial.println("temp_min: " + numberBuffer1);
-          Serial.println("temp_max: " + numberBuffer2);
-          Serial.println("interval: " + numberBuffer3);
-          writeSettingsFile();
-          writeSettingsWeb();
-          status_timer = millis();
-          status("Values saved");
-        }
-
-        // Automatic mode ON
-        if (b == 14) {
+        if (b == 12) { // first button last row
+          // Automatic mode ON
           manual = false;
           autoSwitchRelais();
           status_timer = millis();
           status("Automatic mode On");
         }
 
-        // Exit Setup Screen
-        if (b == 15) {
+        if (b == 14) { // third button last row
+          // Save settings
+          writeSettingsFile();
+          writeSettingsWeb();
+          status_timer = millis();
+          status("Values saved");
+        }
+
+        if (b == 15) { // fourth button last row
+          // Exit Setup Screen
           Serial.println(F("Exit Setup screen"));
           setup_screen = false;
           display_changed = true;
