@@ -1,13 +1,13 @@
-## Home thermostat with touch display 240\*320
-> ESP8266 home thermostat
+## Home thermostat with touch display
+> ESP8266 programmable WiFi home thermostat
 
 <img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-01.png" width="300" align="right" />
 
-This is a smart WiFi IoT home thermostat made from a WeMos D1 Mini Pro, double solid state relays and a 240\*320 touch display that is also logging to a webserver showing a nice gauge and a chart. The hysteresis on my old home thermostat is kaputt and the noises it makes by randomly switching on/off are *very* annoying, especially at night. The scope here was to do these projects on my own, more or less from scratch and not just buy and install an already built one (see [Links](#Links)).
+This is a smart WiFi IoT home thermostat made from a WeMos D1 Mini Pro, double solid state relays and a 240x320 touch display that is also logging to a webserver showing a nice gauge and a chart. The hysteresis on my old home thermostat is kaputt and the noises it makes by randomly switching on/off are *very* annoying, especially at night. The scope was to do these projects on my own, more or less from scratch, and not just buying and installing an already built one (see [Links](#Links)).
 
 I used tzapu's WiFiManager, so I don't have to hard-code the WiFi credentials and local IP address (reflashing it every time I change my WiFi configuration).
 
-A *silent* solid state relay avoids making those annoying clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it interrupts both power lines to the heating system.
+A *silent* solid state relay avoids making those clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it interrupts both power lines to the heating system.
 
 I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats, is doing the job just fine.
 
@@ -15,7 +15,7 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 
 ### Features
 - **WiFiManager**
-- **240\*320 touch Display**
+- **240x320 touch Display**
     - It Shows the measured and target temperatures and the heating status (On/Off). I'm working on an info page for the connection and other miscellaneous settings
     - The display dimms down, one minute after using the touch sensor
 
