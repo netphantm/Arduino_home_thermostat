@@ -35,8 +35,9 @@
 #define FORMAT_SPIFFS false
 
 // Using two fonts since numbers are nice when bold
-#define Italic_FONT &FreeSansOblique12pt7b // Key label font 1
-#define Bold_FONT &FreeSansBold12pt7b    // Key label font 2
+#define Italic_FONT &FreeSansOblique12pt7b
+#define Italic_Small_FONT &FreeSansOblique9pt7b
+#define Bold_FONT &FreeSansBold12pt7b
 
 // ----- NORMAL DISPLAY ----- //
 // Keypad start position, key sizes and spacing
@@ -49,25 +50,22 @@
 #define KEY_N_TEXTSIZE 1   // Font size multiplier
 
 // Numeric display box N1 size and location
-#define DISP1_N_X 72
-#define DISP1_N_Y 40
-#define DISP1_N_W 96
+#define DISP1_N_X 3
+#define DISP1_N_Y 35
+#define DISP1_N_W 76
 #define DISP1_N_H 45
-#define DISP1_N_TSIZE 5
 
 // Numeric display box N2 size and location
-#define DISP2_N_X 95
-#define DISP2_N_Y 125
+#define DISP2_N_X 93
+#define DISP2_N_Y 35
 #define DISP2_N_W 50
 #define DISP2_N_H 45
-#define DISP2_N_TSIZE 5
 
 // Numeric display box N3 size and location
-#define DISP3_N_X 81
-#define DISP3_N_Y 210
+#define DISP3_N_X 157
+#define DISP3_N_Y 35
 #define DISP3_N_W 78
 #define DISP3_N_H 45
-#define DISP3_N_TSIZE 5
 // ----- NORMAL DISPLAY END ----- //
 
 // ----- SETUP DISPLAY ----- //
@@ -85,28 +83,24 @@
 #define DISP1_S_Y 5
 #define DISP1_S_W 53
 #define DISP1_S_H 45
-#define DISP1_S_TSIZE 3
 
 // Numeric display box S2 size and location
 #define DISP2_S_X 181
 #define DISP2_S_Y 55
 #define DISP2_S_W 53
 #define DISP2_S_H 45
-#define DISP2_S_TSIZE 3
 
 // Numeric display box S3 size and location
 #define DISP3_S_X 181
 #define DISP3_S_Y 105
 #define DISP3_S_W 53
 #define DISP3_S_H 45
-#define DISP3_S_TSIZE 3
 
 // Numeric display box S3 size and location
 #define DISP4_S_X 181
 #define DISP4_S_Y 105
 #define DISP4_S_W 53
 #define DISP4_S_H 45
-#define DISP4_S_TSIZE 3
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 // ----- SETUP DISPLAY END ----- //
 
@@ -886,8 +880,6 @@ void loop(void) {
     String numberBuffer2= String(temp_max);
     tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_DARKGREY);
     String numberBuffer3= String(interval/60000);
-    //tft.fillRect(DISP4_S_X + 4, DISP4_S_Y + 1, DISP4_S_W - 5, DISP4_S_H - 2, TFT_DARKGREY);
-    //String numberBuffer4= String(manual);
 
     // Update the number display field
     tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
@@ -905,10 +897,6 @@ void loop(void) {
     int xwidth3 = tft.drawString(numberBuffer3, DISP3_S_X + 4, DISP3_S_Y + 9);
     // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
     tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_DARKGREY);
-    // Draw the string, the value returned is the width in pixels
-    //int xwidth4 = tft.drawString(numberBuffer4, DISP4_S_X + 4, DISP4_S_Y + 9);
-    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-    //tft.fillRect(DISP4_S_X + 4 + xwidth4, DISP4_S_Y + 1, DISP4_S_W - xwidth4 - 5, DISP4_S_H - 2, TFT_DARKGREY);
 
     // Draw keypad Setup
     for (uint8_t row = 0; row < 4; row++) {
@@ -935,26 +923,30 @@ void loop(void) {
     // ----- DISPLAY ROUTINE INIT ----- //
 
     // Clear the screen
+    getTemperature();
     tft.fillScreen(TFT_BLACK);
 
     // Draw number display area and frame
     tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
-    tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
+    tft.setFreeFont(Italic_Small_FONT);  // Choose a nice font for the text
     tft.setTextColor(TFT_CYAN);
 
-    tft.drawString("Room Temperature", 6, 10);
+    tft.setTextSize(1);
+    tft.drawString("Room", 17, 10);
     tft.fillRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_DARKGREY);
     tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
-    tft.drawString("Target Temperature", 6, 95);
+    tft.drawString("Set", 104, 10);
     tft.fillRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_DARKGREY);
     tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
-    String state = manual ? "manual" : "automatic";
-    tft.drawString(String("Relais state: " + state), 6, 180);
+    String state = manual ? "man" : "auto";
+    tft.drawString(String("Relais"), 170, 10);
     tft.fillRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_DARKGREY);
     tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
 
     tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_DARKGREY);
-    String numberBuffer_a= String(temp_c);
+    char number[6];
+    sprintf(number, "%.1f", temp_c);
+    String numberBuffer_a= String(number);
     tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_DARKGREY);
     String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
     tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_DARKGREY);
