@@ -73,5 +73,5 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 - **[MIT license](http://opensource.org/licenses/mit-license.php)**
 - Copyright 2018 © netphantm.
 
-[↑ goto top](#Home_thermostat_with_touch_display)
+[↑ goto top](#Home-thermostat-with-touch-display)
 
