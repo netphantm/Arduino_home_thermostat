@@ -39,7 +39,7 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 - [ ] display dimming after one minute
 - [ ] add info page for connection and other miscellaneous settings
 - [ ] add display page for scheduled timers
-- [ ] rearrange standard display, showing other useful stuff - like current time, day of week, outside temperature, etc.
+- [ ] rearrange standard display, showing other useful stuff - like current time, day of week, outside temperature/weather, etc.
 - [ ] documentation, perhaps 'fritzing'
 
 ---
@@ -73,5 +73,5 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 - **[MIT license](http://opensource.org/licenses/mit-license.php)**
 - Copyright 2018 © netphantm.
 
-[↑ goto top](#Relay-socket-with-OLED-display)
+[↑ goto top](#Home thermostat with touch display)
 
