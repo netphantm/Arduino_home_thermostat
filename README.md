@@ -9,7 +9,7 @@ I used tzapu's WiFiManager so I don't have to hard-code the WiFi credentials, re
 
 A *silent* solid state relay avoids making those clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it cuts both power lines to the heating system at once.
 
-I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats, is doing the job just fine.
+I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats, is doing the job just fine [www branch on Arduino thermostat](https://github.com/netphantm/Arduino_thermostat/tree/www).
 
 ---
 
