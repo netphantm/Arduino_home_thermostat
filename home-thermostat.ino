@@ -50,20 +50,20 @@
 #define KEY_N_TEXTSIZE 1   // Font size multiplier
 
 // Numeric display box N1 size and location
-#define DISP1_N_X 3
-#define DISP1_N_Y 35
+#define DISP1_N_X 5
+#define DISP1_N_Y 30
 #define DISP1_N_W 76
 #define DISP1_N_H 45
 
 // Numeric display box N2 size and location
-#define DISP2_N_X 93
-#define DISP2_N_Y 35
-#define DISP2_N_W 50
+#define DISP2_N_X 95
+#define DISP2_N_Y 30
+#define DISP2_N_W 48
 #define DISP2_N_H 45
 
 // Numeric display box N3 size and location
 #define DISP3_N_X 157
-#define DISP3_N_Y 35
+#define DISP3_N_Y 30
 #define DISP3_N_W 78
 #define DISP3_N_H 45
 // ----- NORMAL DISPLAY END ----- //
@@ -708,6 +708,46 @@ void status_clear() {
   }
 }
 
+void updateDisplayN() {
+  char number[6];
+  sprintf(number, "%.1f", temp_c);
+  String numberBuffer_a= String(number);
+  String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
+  String numberBuffer_c= String(relaisState);
+
+  tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_BLACK);
+  tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_BLACK);
+  tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_BLACK);
+
+  // Update the number display field
+  tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
+  tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
+  if (temp_c < temp_min) 
+    tft.setTextColor(TFT_BLUE);
+  if (temp_c > temp_max) 
+    tft.setTextColor(TFT_GREEN);
+  if (temp_c >= temp_min && temp_c <= temp_max) 
+    tft.setTextColor(TFT_ORANGE);
+  // Draw the string, the value returned is the width in pixels
+  int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
+  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_BLACK);
+  tft.setTextColor(TFT_CYAN);
+  // Draw the string, the value returned is the width in pixels
+  int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
+  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_BLACK);
+  if (relaisState == "ON")
+    tft.setTextColor(TFT_GREEN);
+  if (relaisState == "OFF")
+    tft.setTextColor(TFT_ORANGE);
+  // Draw the string, the value returned is the width in pixels
+  int xwidth_c = tft.drawString(numberBuffer_c, DISP3_N_X + 4, DISP3_N_Y + 9);
+  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  tft.fillRect(DISP3_N_X + 4 + xwidth_c, DISP3_N_Y + 1, DISP3_N_W - xwidth_c - 5, DISP3_N_H - 2, TFT_BLACK);
+  tft.setTextColor(TFT_CYAN);
+}
+
 //------------------------------------------------------------------------------------------
 
 void setup() {
@@ -926,6 +966,8 @@ void loop(void) {
     getTemperature();
     tft.fillScreen(TFT_BLACK);
 
+    updateDisplayN();
+
     // Draw number display area and frame
     tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
     tft.setFreeFont(Italic_Small_FONT);  // Choose a nice font for the text
@@ -933,52 +975,14 @@ void loop(void) {
 
     tft.setTextSize(1);
     tft.drawString("Room", 17, 10);
-    tft.fillRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_DARKGREY);
     tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
-    tft.drawString("Set", 104, 10);
-    tft.fillRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_DARKGREY);
+    tft.drawString("Set", 102, 10);
     tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
-    String state = manual ? "man" : "auto";
-    tft.drawString(String("Relais"), 170, 10);
-    tft.fillRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_DARKGREY);
+    tft.drawString("Relais", 170, 10);
     tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
+    //String state = manual ? "man" : "auto";
 
-    tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_DARKGREY);
-    char number[6];
-    sprintf(number, "%.1f", temp_c);
-    String numberBuffer_a= String(number);
-    tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_DARKGREY);
-    String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
-    tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_DARKGREY);
-    String numberBuffer_c= String(relaisState);
-
-    // Update the number display field
-    tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
-    tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-    if (temp_c < temp_min) 
-      tft.setTextColor(TFT_BLUE);
-    if (temp_c > temp_max) 
-      tft.setTextColor(TFT_GREEN);
-    if (temp_c >= temp_min && temp_c <= temp_max) 
-      tft.setTextColor(TFT_ORANGE);
-    // Draw the string, the value returned is the width in pixels
-    int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
-    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-    tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_DARKGREY);
-    tft.setTextColor(TFT_CYAN);
-    // Draw the string, the value returned is the width in pixels
-    int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
-    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-    tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_DARKGREY);
-    if (relaisState == "ON")
-      tft.setTextColor(TFT_GREEN);
-    if (relaisState == "OFF")
-      tft.setTextColor(TFT_ORANGE);
-    // Draw the string, the value returned is the width in pixels
-    int xwidth_c = tft.drawString(numberBuffer_c, DISP3_N_X + 4, DISP3_N_Y + 9);
-    // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-    tft.fillRect(DISP3_N_X + 4 + xwidth_c, DISP3_N_Y + 1, DISP3_N_W - xwidth_c - 5, DISP3_N_H - 2, TFT_DARKGREY);
-    tft.setTextColor(TFT_CYAN);
+    updateDisplayN();
 
     // Draw keypad Display
     for (uint8_t row = 0; row < 1; row++) {
@@ -1166,12 +1170,14 @@ void loop(void) {
 
         // if a numberpad button, append + to the numberBuffer
         // 0/1
-        if (b == 0 && temp_max <= 29) {
+        if (b == 0 && temp_min <= 27 && temp_max <= 29) {
+            temp_min++;
             temp_max++;
             status_timer = millis();
             status("Temperature raised");
         }
-        if (b == 1 && temp_max >= 19) {
+        if (b == 1 && temp_min >= 17 && temp_max >= 19) {
+            temp_min--;
             temp_max--;
             status_timer = millis();
             status("Temperature lowered");
@@ -1185,23 +1191,7 @@ void loop(void) {
           delay(500);
         }
 
-        tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_DARKGREY);
-        String numberBuffer_a= String(temp_c);
-        tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_DARKGREY);
-        String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
-
-        // Update the number display field
-        tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
-        tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
-        tft.setTextColor(TFT_CYAN);  // Set the font color
-        // Draw the string, the value returned is the width in pixels
-        int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
-        // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-        tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_DARKGREY);
-        // Draw the string, the value returned is the width in pixels
-        int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
-        // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-        tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_DARKGREY);
+        updateDisplayN();
 
         delay(10); // UI debouncing
       }
