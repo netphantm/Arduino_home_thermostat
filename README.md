@@ -5,9 +5,9 @@
 
 This is a smart WiFi IoT home thermostat made from a WeMos D1 Mini Pro, double solid state relays and a 240x320 touch display that is also logging to a webserver showing a nice gauge and a chart. The hysteresis on my old home thermostat is kaputt and the noises it makes by randomly switching on/off are *very* annoying, especially at night. The scope was to do these projects on my own, more or less from scratch, and not just buying and installing an already built one (see [Links](#Links)).
 
-I used tzapu's WiFiManager, so I don't have to hard-code the WiFi credentials and local IP address (reflashing it every time I change my WiFi configuration).
+I used tzapu's WiFiManager so I don't have to hard-code the WiFi credentials, reflashing it every time I change my WiFi configuration.
 
-A *silent* solid state relay avoids making those clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it interrupts both power lines to the heating system.
+A *silent* solid state relay avoids making those clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it cuts both power lines to the heating system at once.
 
 I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats, is doing the job just fine.
 
@@ -15,9 +15,8 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 
 ### Features
 - **WiFiManager**
-- **240x320 touch Display**
-    - It Shows the measured and target temperatures and the heating status (On/Off). I'm working on an info page for the connection and other miscellaneous settings
-    - The display dimms down, one minute after using the touch sensor
+- **touch LCD Display (resistive)**
+    - shows the measured and target temperatures and the heating system status.
 
 ---
 
@@ -37,10 +36,10 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 ---
 
 ### TODO
+- [ ] display dimming after one minute
 - [ ] add info page for connection and other miscellaneous settings
 - [ ] add display page for scheduled timers
-- [ ] display dimming after 1 minute
-- [ ] rearrange standard display, show other useful stuff - like current time, outside temperature, etc.
+- [ ] rearrange standard display, showing other useful stuff - like current time, day of week, outside temperature, etc.
 - [ ] documentation, perhaps 'fritzing'
 
 ---
