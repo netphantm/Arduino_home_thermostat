@@ -798,7 +798,6 @@ void updateDisplayS() {
 }
 
 void getTime() {
-  timeNow = "";
   // update the NTP client and get the UNIX UTC timestamp 
   timeClient.update();
   unsigned long epochTime =  timeClient.getEpochTime();
@@ -814,6 +813,7 @@ void getTime() {
   Timezone CE(CEST, CET);
   local = CE.toLocal(utc);
 
+  timeNow = "";
   // now format the Time variables into strings with proper names for month, day etc
   date += days[weekday(local)-1];
   date += ", ";
@@ -831,10 +831,10 @@ void getTime() {
   if(minute(local) < 10)  // add a zero if second is under 10
     timeNow += "0";
   timeNow += minute(local);
-  //timeNow += ":";
-  //if(second(local) < 10)  // add a zero if second is under 10
-  //  timeNow += "0";
-  //timeNow += second(local);
+  timeNow += ":";
+  if(second(local) < 10)  // add a zero if second is under 10
+    timeNow += "0";
+  timeNow += second(local);
 }
 
 //------------------------------------------------------------------------------------------
@@ -1041,6 +1041,7 @@ void loop(void) {
     tft.drawString("WiFi SSID: " + WiFi.SSID(), 5, 95);
     tft.drawString("LAN IP: " + String(lanIP), 5, 125);
     tft.drawString("Inet IP: " + String(inetIP), 5, 155);
+    tft.drawString("Time: ", 5, 185);
 
     updateDisplayN();
 
@@ -1064,22 +1065,27 @@ void loop(void) {
     display_changed = false;
 
     // draw grid
-    for (int32_t x=0; x<250; x=x+10) {
+    for (int32_t x=10; x<250; x=x+10) {
       tft.drawLine(x, 0, x, 320, TFT_DARKGREEN);
     }
-    for (int32_t y=0; y<330; y=y+10) {
+    for (int32_t y=10; y<330; y=y+10) {
       tft.drawLine(0, y, 240, y, TFT_DARKGREEN);
     }
+    //tft.drawLine(239, 0, 239, 320, TFT_DARKGREEN);
+    //tft.drawLine(0, 319, 240, 319, TFT_DARKGREEN);
   }
 
   getTime();
   if ((timeOld != timeNow) && (! setup_screen)) {
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-    tft.fillRect(50, 180, 60, 25, TFT_BLACK);
+    //tft.fillRect(50, 180, 60, 25, TFT_BLACK);
     tft.setFreeFont(Small_FONT);
-    tft.setTextColor(TFT_CYAN);
     tft.setTextSize(1);
-    tft.drawString(String("Time: " + timeNow), 5, 185);
+    tft.setTextColor(TFT_BLACK);
+    tft.drawString(String(timeOld), 55, 185);
+    tft.setTextColor(TFT_CYAN);
+    tft.drawString(String(timeNow), 55, 185);
+    timeOld = timeNow;
   }
 
   // --- key was pressed --- //
@@ -1291,5 +1297,4 @@ void loop(void) {
   server.handleClient();
   if (! statusCleared)
     status_clear();
-  timeOld = timeNow;
 } // void loop() END
