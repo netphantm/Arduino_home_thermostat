@@ -168,6 +168,7 @@ String numberBuffer3 = String(interval/60000);
 String numberBuffer4 = String(manual);
 bool display_changed = true;
 bool setup_screen = false;
+bool statusCleared = true;
 // Create 16 keys for the setup keypad
 char keyLabel1[16][5] = {"rel", "min", "max", "int", "On", "+", "+", "+", "Off", "-", "-", "-", "Auto", "RST", "Save", "Exit"};
 uint16_t keyColor1[16] = {
@@ -204,8 +205,8 @@ void getTemperature() {
   Serial.print("= getTemperature: ");
   String str_last = str_c;
   uptime = (millis() / 1000 ); // Refresh uptime
-  delay(10);
   DS18B20.requestTemperatures();  // initialize temperature sensor
+  delay(10);
   temp_c = float(DS18B20.getTempCByIndex(0)); // read sensor
   yield();
   temp_c = temp_c + temp_dev; // calibrating sensor
@@ -705,11 +706,13 @@ void status(const char *msg) {
   tft.setTextDatum(TC_DATUM);
   tft.setTextSize(1);
   tft.drawString(msg, STATUS_X, STATUS_Y);
+  statusCleared = false;
 }
 
 void status_clear() {
-  if (status_timer < (millis() - 1000)) {
+  if (status_timer < (millis() - 2000)) {
     status(""); // Clear the old status
+    statusCleared = true;
   }
 }
 
@@ -792,6 +795,46 @@ void updateDisplayS() {
   int xwidth3 = tft.drawString(numberBuffer3, DISP3_S_X + 4, DISP3_S_Y + 9);
   // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
   tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_DARKGREY);
+}
+
+void getTime() {
+  timeNow = "";
+  // update the NTP client and get the UNIX UTC timestamp 
+  timeClient.update();
+  unsigned long epochTime =  timeClient.getEpochTime();
+
+  // convert received time stamp to time_t object
+  time_t local, utc;
+  utc = epochTime;
+
+  // Then convert the UTC UNIX timestamp to local time
+  // Central European Time (Frankfurt, Paris)
+  TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
+  TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
+  Timezone CE(CEST, CET);
+  local = CE.toLocal(utc);
+
+  // now format the Time variables into strings with proper names for month, day etc
+  date += days[weekday(local)-1];
+  date += ", ";
+  date += months[month(local)-1];
+  date += " ";
+  date += day(local);
+  date += ", ";
+  date += year(local);
+
+  // format the time to 12-hour format with AM/PM and no seconds
+  if(hour(local) < 10)  // add a zero if minute is under 10
+    timeNow += "0";
+  timeNow += hour(local);
+  timeNow += ":";
+  if(minute(local) < 10)  // add a zero if second is under 10
+    timeNow += "0";
+  timeNow += minute(local);
+  //timeNow += ":";
+  //if(second(local) < 10)  // add a zero if second is under 10
+  //  timeNow += "0";
+  //timeNow += second(local);
 }
 
 //------------------------------------------------------------------------------------------
@@ -937,64 +980,6 @@ void setup() {
 //------------------------------------------------------------------------------------------
 
 void loop(void) {
-  date = "";  // clear the variables
-  timeNow = "";
-
-  // update the NTP client and get the UNIX UTC timestamp 
-  timeClient.update();
-  unsigned long epochTime =  timeClient.getEpochTime();
-
-  // convert received time stamp to time_t object
-  time_t local, utc;
-  utc = epochTime;
-
-  // Then convert the UTC UNIX timestamp to local time
-  // Central European Time (Frankfurt, Paris)
-  TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
-  TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
-  Timezone CE(CEST, CET);
-  local = CE.toLocal(utc);
-
-  // now format the Time variables into strings with proper names for month, day etc
-  date += days[weekday(local)-1];
-  date += ", ";
-  date += months[month(local)-1];
-  date += " ";
-  date += day(local);
-  date += ", ";
-  date += year(local);
-
-  // format the time to 12-hour format with AM/PM and no seconds
-  if(hour(local) < 10)  // add a zero if minute is under 10
-    timeNow += "0";
-  timeNow += hour(local);
-  timeNow += ":";
-  if(minute(local) < 10)  // add a zero if second is under 10
-    timeNow += "0";
-  timeNow += minute(local);
-  //timeNow += ":";
-  //if(second(local) < 10)  // add a zero if second is under 10
-  //  timeNow += "0";
-  //timeNow += second(local);
-  //timeNow += " ";
-  //timeNow += ampm[isPM(local)];
-  // Display the date and time
-  //Serial.println("");
-  //Serial.print("Local date: ");
-  //Serial.print(date);
-  //Serial.println("");
-  //Serial.print("Local time: ");
-  //Serial.print(timeNow);
-
-  if (timeNow != timeOld) {
-    tft.fillRect(50, 195, 220, 35, TFT_BLACK);
-    tft.setFreeFont(Small_FONT);
-    tft.setTextColor(TFT_CYAN);
-    tft.setTextSize(1);
-    tft.drawString("Time: " + timeNow, 10, 185);
-  }
-  timeOld = timeNow;
-
   int pressed = 0;
   if (display_changed && setup_screen) {
     // ----- SETUP DISPLAY INIT ----- //
@@ -1077,6 +1062,24 @@ void loop(void) {
     }
     // ----- DISPLAY ROUTINE INIT END ----- //
     display_changed = false;
+
+    // draw grid
+    for (int32_t x=0; x<250; x=x+10) {
+      tft.drawLine(x, 0, x, 320, TFT_DARKGREEN);
+    }
+    for (int32_t y=0; y<330; y=y+10) {
+      tft.drawLine(0, y, 240, y, TFT_DARKGREEN);
+    }
+  }
+
+  getTime();
+  if ((timeOld != timeNow) && (! setup_screen)) {
+    tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+    tft.fillRect(50, 180, 60, 25, TFT_BLACK);
+    tft.setFreeFont(Small_FONT);
+    tft.setTextColor(TFT_CYAN);
+    tft.setTextSize(1);
+    tft.drawString(String("Time: " + timeNow), 5, 185);
   }
 
   // --- key was pressed --- //
@@ -1250,10 +1253,6 @@ void loop(void) {
     pressed = 0;
     // ----- DISPLAY ROUTINE END ----- //
   }
-  /*
-  //Serial.println("");
-  */
-  delay(100);
   
   // from thermostat.ino
   unsigned long presTime = millis();
@@ -1264,7 +1263,7 @@ void loop(void) {
     getInetIP();
     if (readSettingsWeb() != 200) // first, try reading settings from webserver
       readSettingsFile(); // if failed, read settings from SPIFFS
-    prevTime = presTime; // save the last time sensor was read
+    prevTime = presTime; // save the last time
 
     if (emptyFile) { // settings file does not exist
       if (readSettingsWeb() != 200) { // first, try reading settings from webserver
@@ -1290,5 +1289,7 @@ void loop(void) {
     printProgress(passed * 100 / interval);
   }
   server.handleClient();
-  status_clear();
+  if (! statusCleared)
+    status_clear();
+  timeOld = timeNow;
 } // void loop() END
