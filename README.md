@@ -9,7 +9,7 @@ I used tzapu's WiFiManager so I don't have to hard-code the WiFi credentials, re
 
 A *silent* solid state relay avoids making those clicking noises when it turns the heating on or off. It's a double one for safety reasons, so it cuts both power lines to the heating system at once.
 
-I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats, is doing the job just fine \([www branch on Arduino thermostat](https://github.com/netphantm/Arduino_thermostat/tree/www)\).
+I suppose it could be integrated into [Home Assistant](https://hass.io/) (or anonther home automation system), but I didn't want that. I plan to make a nice, resposive web interface for the settings, hosted on my own webserver. For now, the crude php version which also controls my other thermostats is doing the job just fine \([www branch on Arduino thermostat](https://github.com/netphantm/Arduino_thermostat/tree/www)\).
 
 ---
 
@@ -51,6 +51,8 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 [2.8 Inch TFT SPI Serial Port LCD Touch Panel ILI9341 240x320 5V/3.3V BAF](https://www.ebay.de/itm/2-8-Inch-TFT-SPI-Serial-Port-LCD-Touch-Panel-Module-ILI9341-240x320-5V-3-3V-/152643497986?hash=item238a42f002)
 
 [1/2/4 Channel 5v OMRON SSR G3MB-202P Solid State Relay Module For Arduino](https://www.ebay.de/itm/1-2-4-Channel-5v-OMRON-SSR-G3MB-202P-Solid-State-Relay-Module-For-Arduino/253066802045?ssPageName=STRK%3AMEBIDX%3AIT&_trksid=p2057872.m2749.l2649)
+
+[ESP8266 Display 2.8 inch Touch LCD with WeMos D1 mini board](http://usemodj.com/2016/03/21/esp8266-display-2-8-inch-touch-lcd-with-wemos-d1-mini-board/)
 
 [WiFiManager](https://github.com/tzapu/WiFiManager)
 
