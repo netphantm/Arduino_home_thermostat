@@ -1,6 +1,11 @@
 //------------------------------------------------------------------------------------------
 // TODO: save relais state in manual mode
 //------------------------------------------------------------------------------------------
+#include <Time.h>
+#include <Timezone.h>
+#include <TimeLib.h>
+#include <ESP8266WiFi.h>
+#include <NTPClient.h>
 
 #include "FS.h"
 #include <SPI.h>
@@ -16,11 +21,10 @@
 #include "SSD1306Wire.h"
 #include <ArduinoJson.h>
 #include "Free_Fonts.h" // Include the header file attached to this sketch
-#include <time.h>
 
 //// define variables / hardware
-#define ONE_WIRE_BUS D3 // DS18B20 pin D4 = GPIO2
-#define RELAISPIN D0 // or D0?
+#define ONE_WIRE_BUS D3
+#define RELAISPIN D0
 #define PBSTR "|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 79
 
@@ -37,6 +41,7 @@
 // Using two fonts since numbers are nice when bold
 #define Italic_FONT &FreeSansOblique12pt7b
 #define Small_FONT &FreeSans9pt7b
+#define Big_FONT &FreeSans24pt7b
 #define Bold_FONT &FreeSansBold12pt7b
 
 // ----- NORMAL DISPLAY ----- //
@@ -112,6 +117,10 @@ uint8_t numberIndex = 0;
 #define STATUS_X 120 // Centred on this
 #define STATUS_Y 305
 
+#define NTP_OFFSET   0 //60 * 60      // In seconds
+#define NTP_INTERVAL 60 * 60 * 1000    // In miliseconds
+#define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
+
 // from thermostat.ino
 const size_t bufferSize = JSON_OBJECT_SIZE(6) + 160;
 const static String sFile = "/settings.txt";  // SPIFFS file name must start with "/".
@@ -176,8 +185,20 @@ uint16_t keyColor2[15] = {
                         };
 // Invoke the TFT_eSPI button class and create all the button objects
 TFT_eSPI_Button key[16];
-
 // from thermostat.ino
+
+// Set up the NTP UDP client
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
+String date;
+String timeNow;
+String timeOld;
+const char * days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"} ;
+const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"} ;
+const char * ampm[] = {"AM", "PM"} ;
+
+//------------------------------------------------------------------------------------------
+
 //// read temperature from sensor / switch relay on or off
 void getTemperature() {
   Serial.print("= getTemperature: ");
@@ -189,23 +210,6 @@ void getTemperature() {
   yield();
   temp_c = temp_c + temp_dev; // calibrating sensor
   Serial.println(temp_c);
-}
-
-void setClock() {
-  configTime(2 * 3600, 0, "pool.ntp.org", "de.pool.ntp.org");
-
-  Serial.print("Waiting for NTP time sync: ");
-  time_t now = time(nullptr);
-  while (now < 8 * 3600 * 2) {
-    delay(500);
-    Serial.print(".");
-    now = time(nullptr);
-  }
-  Serial.println("");
-  struct tm timeinfo;
-  gmtime_r(&now, &timeinfo);
-  Serial.print("Current time: ");
-  Serial.print(asctime(&timeinfo));
 }
 
 void switchRelais(String sw = "TOGGLE") { // if no parameter given, assume TOGGLE
@@ -721,14 +725,14 @@ void updateDisplayN() {
   tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_BLACK);
 
   // Update the number display field
-  tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
-  tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
+  tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+  tft.setFreeFont(&FreeSans18pt7b);
   if (temp_c < temp_min) 
     tft.setTextColor(TFT_BLUE);
   if (temp_c > temp_max) 
     tft.setTextColor(TFT_GREEN);
   if (temp_c >= temp_min && temp_c <= temp_max) 
-    tft.setTextColor(TFT_ORANGE);
+    tft.setTextColor(0xFBE0);
   // Draw the string, the value returned is the width in pixels
   int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
   // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
@@ -741,7 +745,7 @@ void updateDisplayN() {
   if (relaisState == "ON")
     tft.setTextColor(TFT_GREEN);
   if (relaisState == "OFF")
-    tft.setTextColor(TFT_ORANGE);
+    tft.setTextColor(0xFBE0);
   // Draw the string, the value returned is the width in pixels
   int xwidth_c = tft.drawString(numberBuffer_c, DISP3_N_X + 4, DISP3_N_Y + 9);
   // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
@@ -773,8 +777,8 @@ void updateDisplayS() {
   String numberBuffer3= String(interval/60000);
 
   // Update the number display field
-  tft.setTextDatum(TL_DATUM);        // Use top left corner as text coord datum
-  tft.setFreeFont(&FreeSans18pt7b);  // Choose a nice font that fits box
+  tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+  tft.setFreeFont(&FreeSans18pt7b);
   tft.setTextColor(TFT_CYAN);  // Set the font color
   // Draw the string, the value returned is the width in pixels
   int xwidth1 = tft.drawString(numberBuffer1, DISP1_S_X + 4, DISP1_S_Y + 9);
@@ -933,7 +937,64 @@ void setup() {
 //------------------------------------------------------------------------------------------
 
 void loop(void) {
-  String IamHere = "loop()";
+  date = "";  // clear the variables
+  timeNow = "";
+
+  // update the NTP client and get the UNIX UTC timestamp 
+  timeClient.update();
+  unsigned long epochTime =  timeClient.getEpochTime();
+
+  // convert received time stamp to time_t object
+  time_t local, utc;
+  utc = epochTime;
+
+  // Then convert the UTC UNIX timestamp to local time
+  // Central European Time (Frankfurt, Paris)
+  TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
+  TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
+  Timezone CE(CEST, CET);
+  local = CE.toLocal(utc);
+
+  // now format the Time variables into strings with proper names for month, day etc
+  date += days[weekday(local)-1];
+  date += ", ";
+  date += months[month(local)-1];
+  date += " ";
+  date += day(local);
+  date += ", ";
+  date += year(local);
+
+  // format the time to 12-hour format with AM/PM and no seconds
+  if(hour(local) < 10)  // add a zero if minute is under 10
+    timeNow += "0";
+  timeNow += hour(local);
+  timeNow += ":";
+  if(minute(local) < 10)  // add a zero if second is under 10
+    timeNow += "0";
+  timeNow += minute(local);
+  //timeNow += ":";
+  //if(second(local) < 10)  // add a zero if second is under 10
+  //  timeNow += "0";
+  //timeNow += second(local);
+  //timeNow += " ";
+  //timeNow += ampm[isPM(local)];
+  // Display the date and time
+  //Serial.println("");
+  //Serial.print("Local date: ");
+  //Serial.print(date);
+  //Serial.println("");
+  //Serial.print("Local time: ");
+  //Serial.print(timeNow);
+
+  if (timeNow != timeOld) {
+    tft.fillRect(50, 195, 220, 35, TFT_BLACK);
+    tft.setFreeFont(Small_FONT);
+    tft.setTextColor(TFT_CYAN);
+    tft.setTextSize(1);
+    tft.drawString("Time: " + timeNow, 10, 185);
+  }
+  timeOld = timeNow;
+
   int pressed = 0;
   if (display_changed && setup_screen) {
     // ----- SETUP DISPLAY INIT ----- //
@@ -960,7 +1021,6 @@ void loop(void) {
     }
     // ----- SETUP DISPLAY INIT END ----- //
     display_changed = false;
-    IamHere = "display_changed && setup_screen";
   }
 
   if (display_changed && ! setup_screen) {
@@ -974,12 +1034,12 @@ void loop(void) {
 
     // Draw number display area and frame
     tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
-    tft.setFreeFont(Small_FONT);  // Choose a nice font for the text
+    tft.setFreeFont(Small_FONT);
     tft.setTextColor(TFT_CYAN);
 
-    tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
-    tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
-    tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
+    //tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
+    //tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
+    //tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
 
     tft.setTextSize(1);
     tft.drawString("Room", 17, 10);
@@ -995,8 +1055,7 @@ void loop(void) {
     tft.setTextColor(TFT_CYAN);
     tft.drawString("WiFi SSID: " + WiFi.SSID(), 5, 95);
     tft.drawString("LAN IP: " + String(lanIP), 5, 125);
-    tft.drawString("WAN IP: " + String(inetIP), 5, 155);
-    tft.setTextColor(TFT_CYAN);
+    tft.drawString("Inet IP: " + String(inetIP), 5, 155);
 
     updateDisplayN();
 
@@ -1018,7 +1077,6 @@ void loop(void) {
     }
     // ----- DISPLAY ROUTINE INIT END ----- //
     display_changed = false;
-    IamHere = "display_changed && ! setup_screen";
   }
 
   // --- key was pressed --- //
@@ -1136,7 +1194,6 @@ void loop(void) {
       }
     }
     pressed = 0;
-    IamHere = "setup_screen && pressed";
     // ----- SETUP ROUTINE END ----- //
   }
 
@@ -1191,12 +1248,9 @@ void loop(void) {
       }
     }
     pressed = 0;
-    IamHere = "! setup_screen && pressed";
     // ----- DISPLAY ROUTINE END ----- //
   }
   /*
-  Serial.print("IamHere = ");
-  Serial.println(IamHere);
   //Serial.println("");
   */
   delay(100);
@@ -1237,5 +1291,4 @@ void loop(void) {
   }
   server.handleClient();
   status_clear();
-  //setClock();
 } // void loop() END
