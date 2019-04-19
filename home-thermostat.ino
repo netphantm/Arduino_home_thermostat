@@ -1139,24 +1139,24 @@ void loop(void) {
         }
 
         // 5/9 - second col
-        if (b == 5 && temp_min <= 35) {
+        if (b == 5 && temp_min < 31) {
             temp_min++;
             status_timer = millis();
             status("Increased temp min");
         }
-        if (b == 9 && temp_min >= 16) {
+        if (b == 9 && temp_min > 17) {
             temp_min--;
             status_timer = millis();
             status("Decreased temp min");
         }
 
         // 6/10 - third col
-        if (b == 6 && temp_max <= 37) {
+        if (b == 6 && temp_max < 33) {
             temp_max++;
             status_timer = millis();
             status("Increased temp max");
         }
-        if (b == 10 && temp_max >= 16) {
+        if (b == 10 && temp_max > 19) {
             temp_max--;
             status_timer = millis();
             status("Decreased temp max");
@@ -1241,13 +1241,13 @@ void loop(void) {
 
         // if a numberpad button, append + to the numberBuffer
         // 0/1
-        if (b == 0 && temp_min <= 27 && temp_max <= 29) {
+        if (b == 0 && temp_min < 31 && temp_max < 33) {
             temp_min++;
             temp_max++;
             status_timer = millis();
             status("Temperature raised");
         }
-        if (b == 1 && temp_min >= 17 && temp_max >= 19) {
+        if (b == 1 && temp_min > 17 && temp_max > 19) {
             temp_min--;
             temp_max--;
             status_timer = millis();
