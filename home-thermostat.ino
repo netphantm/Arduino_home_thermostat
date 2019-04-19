@@ -116,7 +116,7 @@ uint8_t numberIndex = 0;
 #define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
 
 // from thermostat.ino
-const size_t bufferSize = JSON_OBJECT_SIZE(6) + 160;
+const size_t jsonCapacity = JSON_OBJECT_SIZE(10) + 230;
 const static String sFile = "/settings.txt";  // SPIFFS file name must start with "/".
 const static String configHost = "temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
 unsigned long uptime = (millis() / 1000 );
@@ -276,8 +276,8 @@ void clearSpiffs() {
 
 void deserializeJson(String json) {
   Serial.print(F("= deserializeJson: "));
-  StaticJsonBuffer<512> jsonBuffer;
-  JsonObject &root = jsonBuffer.parseObject(json);
+  DynamicJsonBuffer jsonBuffer(jsonCapacity);
+  JsonObject& root = jsonBuffer.parseObject(json);
   if (!root.success()) {
     Serial.println(F("Error deserializing json!"));
     emptyFile = true;
@@ -293,15 +293,15 @@ void deserializeJson(String json) {
     heater = root["heater"].as<bool>(), sizeof(heater);
     manual = root["manual"].as<bool>(), sizeof(manual);
     debug = root["debug"].as<bool>(), sizeof(debug);
-    if (debug)
-      Serial.println(F("OK."));
+    Serial.println(F("OK."));
     emptyFile = false; // mark file as not empty
   }
 }
 
 String serializeJson() {
-  StaticJsonBuffer<256> jsonBuffer;
-  JsonObject &root = jsonBuffer.createObject();
+  Serial.print(F("= serializeJson: "));
+  DynamicJsonBuffer jsonBuffer(jsonCapacity);
+  JsonObject& root = jsonBuffer.createObject();
   root["SHA1"] = SHA1;
   root["loghost"] = loghost;
   root["httpsPort"] = httpsPort;
@@ -314,9 +314,9 @@ String serializeJson() {
   root["debug"] = debug;
   String outputJson;
   root.printTo(outputJson);
+  Serial.println(F("OK."));
   if (debug) {
-    Serial.print(F("- serializeJson: "));
-    Serial.println("|" + outputJson + "|");
+    Serial.println(outputJson);
   }
   return outputJson;
 }
