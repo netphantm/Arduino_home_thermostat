@@ -55,22 +55,16 @@
 #define KEY_N_TEXTSIZE 1   // Font size multiplier
 
 // Numeric display box N1 size and location
-#define DISP1_N_X 5
+#define DISP1_N_X 25
 #define DISP1_N_Y 30
-#define DISP1_N_W 76
-#define DISP1_N_H 45
+#define DISP1_N_W 100
+#define DISP1_N_H 50
 
 // Numeric display box N2 size and location
-#define DISP2_N_X 95
-#define DISP2_N_Y 30
+#define DISP2_N_X 155
+#define DISP2_N_Y 38
 #define DISP2_N_W 48
 #define DISP2_N_H 45
-
-// Numeric display box N3 size and location
-#define DISP3_N_X 157
-#define DISP3_N_Y 30
-#define DISP3_N_W 78
-#define DISP3_N_H 45
 // ----- NORMAL DISPLAY END ----- //
 
 // ----- SETUP DISPLAY ----- //
@@ -144,6 +138,8 @@ String hostname = "Donbot";
 uint8_t sha1[20];
 float temp_c = 25;
 float temp_dev;
+char number[8];
+char numberOld[8];
 String webString;
 String relaisState;
 String SHA1;
@@ -156,6 +152,12 @@ int cursorX;
 int cursorY;
 int temp_min = 24;
 int temp_max = 26;
+int setTemp = temp_min+(temp_max-temp_min)/2;
+int setTempOld;
+int wRelais;
+int wState;
+int wComma;
+int y_line1 = 110;
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
@@ -718,83 +720,45 @@ void status_clear() {
 }
 
 void updateDisplayN() {
-  char number[6];
-  sprintf(number, "%.1f", temp_c);
-  String numberBuffer_a= String(number);
-  String numberBuffer_b= String(temp_min+((temp_max-temp_min)/2));
-  String numberBuffer_c= String(relaisState);
-
-  tft.fillRect(DISP1_N_X + 4, DISP1_N_Y + 1, DISP1_N_W - 5, DISP1_N_H - 2, TFT_BLACK);
-  tft.fillRect(DISP2_N_X + 4, DISP2_N_Y + 1, DISP2_N_W - 5, DISP2_N_H - 2, TFT_BLACK);
-  tft.fillRect(DISP3_N_X + 4, DISP3_N_Y + 1, DISP3_N_W - 5, DISP3_N_H - 2, TFT_BLACK);
-
-  // Update the number display field
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-  tft.setFreeFont(&FreeSans18pt7b);
-  if (temp_c < temp_min) 
+  sprintf(number, "%.1f", temp_c);
+  setTemp = temp_min+(temp_max-temp_min)/2;
+
+  // Update the number display fields
+  tft.setFreeFont(&FreeSans24pt7b);
+  tft.setTextColor(TFT_BLACK);
+  tft.drawString(String(numberOld), DISP1_N_X + 4, DISP1_N_Y + 9);
+  if (temp_c <= temp_min) 
     tft.setTextColor(TFT_BLUE);
-  if (temp_c > temp_max) 
-    tft.setTextColor(TFT_GREEN);
-  if (temp_c >= temp_min && temp_c <= temp_max) 
+  if (temp_c >= temp_max) 
     tft.setTextColor(0xFBE0);
-  // Draw the string, the value returned is the width in pixels
-  int xwidth_a = tft.drawString(numberBuffer_a, DISP1_N_X + 4, DISP1_N_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-  tft.fillRect(DISP1_N_X + 4 + xwidth_a, DISP1_N_Y + 1, DISP1_N_W - xwidth_a - 5, DISP1_N_H - 2, TFT_BLACK);
+  if (temp_c > temp_min && temp_c < temp_max) 
+    tft.setTextColor(TFT_YELLOW);
+  tft.drawString(String(number), DISP1_N_X + 4, DISP1_N_Y + 9);
+
+  tft.setFreeFont(&FreeSans18pt7b);
+  tft.setTextColor(TFT_BLACK);
+  tft.drawString(String(setTempOld), DISP2_N_X + 4, DISP2_N_Y + 9);
   tft.setTextColor(TFT_CYAN);
-  // Draw the string, the value returned is the width in pixels
-  int xwidth_b = tft.drawString(numberBuffer_b, DISP2_N_X + 4, DISP2_N_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-  tft.fillRect(DISP2_N_X + 4 + xwidth_b, DISP2_N_Y + 1, DISP2_N_W - xwidth_b - 5, DISP2_N_H - 2, TFT_BLACK);
-  if (relaisState == "ON")
-    tft.setTextColor(TFT_GREEN);
-  if (relaisState == "OFF")
-    tft.setTextColor(0xFBE0);
-  // Draw the string, the value returned is the width in pixels
-  int xwidth_c = tft.drawString(numberBuffer_c, DISP3_N_X + 4, DISP3_N_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
-  tft.fillRect(DISP3_N_X + 4 + xwidth_c, DISP3_N_Y + 1, DISP3_N_W - xwidth_c - 5, DISP3_N_H - 2, TFT_BLACK);
-  tft.setTextColor(TFT_CYAN);
+  tft.drawString(String(setTemp), DISP2_N_X + 4, DISP2_N_Y + 9);
+  sprintf(numberOld, "%c", number);
+  setTempOld = setTemp;
 }
 
 void updateDisplayS() {
-  // Draw number display area and frame
-  tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
-  tft.setFreeFont(Italic_FONT);  // Choose a nice font for the text
-  tft.setTextColor(TFT_CYAN);
-
-  tft.drawString("Temp min", 6, 20);
-  tft.fillRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_DARKGREY);
-  tft.drawRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_WHITE);
-  tft.drawString("Temp max", 6, 70);
-  tft.fillRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_DARKGREY);
-  tft.drawRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_WHITE);
-  tft.drawString("Interval", 6, 120);
-  tft.fillRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_DARKGREY);
-  tft.drawRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_WHITE);
-
-  tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_DARKGREY);
-  String numberBuffer1= String(temp_min);
-  tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_DARKGREY);
-  String numberBuffer2= String(temp_max);
-  tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_DARKGREY);
-  String numberBuffer3= String(interval/60000);
-
-  // Update the number display field
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+  tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_DARKGREY);
+
+  // Update the number display fields
   tft.setFreeFont(&FreeSans18pt7b);
   tft.setTextColor(TFT_CYAN);  // Set the font color
-  // Draw the string, the value returned is the width in pixels
-  int xwidth1 = tft.drawString(numberBuffer1, DISP1_S_X + 4, DISP1_S_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  int xwidth1 = tft.drawString(String(temp_min), DISP1_S_X + 4, DISP1_S_Y + 9);
   tft.fillRect(DISP1_S_X + 4 + xwidth1, DISP1_S_Y + 1, DISP1_S_W - xwidth1 - 5, DISP1_S_H - 2, TFT_DARKGREY);
-  // Draw the string, the value returned is the width in pixels
-  int xwidth2 = tft.drawString(numberBuffer2, DISP2_S_X + 4, DISP2_S_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  int xwidth2 = tft.drawString(String(temp_max), DISP2_S_X + 4, DISP2_S_Y + 9);
   tft.fillRect(DISP2_S_X + 4 + xwidth2, DISP2_S_Y + 1, DISP2_S_W - xwidth2 - 5, DISP2_S_H - 2, TFT_DARKGREY);
-  // Draw the string, the value returned is the width in pixels
-  int xwidth3 = tft.drawString(numberBuffer3, DISP3_S_X + 4, DISP3_S_Y + 9);
-  // Now cover up the rest of the line up by drawing a black rectangle.  No flicker this way
+  int xwidth3 = tft.drawString(String(interval/60000), DISP3_S_X + 4, DISP3_S_Y + 9);
   tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_DARKGREY);
 }
 
@@ -981,7 +945,7 @@ void setup() {
   getTime();
   server.begin();
   debug_vars();
-} // void setup() END
+} // setup() END
 
 //------------------------------------------------------------------------------------------
 
@@ -992,6 +956,29 @@ void loop(void) {
 
     // Clear the screen
     tft.fillScreen(TFT_BLACK);
+
+    // draw grid
+    for (int32_t x=20; x<240; x=x+20) {
+      tft.drawLine(x, 0, x, 320, TFT_NAVY);
+    }
+    for (int32_t y=20; y<320; y=y+20) {
+      tft.drawLine(0, y, 240, y, TFT_NAVY);
+    }
+
+    tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+    tft.setTextSize(1);
+    tft.setFreeFont(Italic_FONT);
+    tft.setTextColor(TFT_CYAN);
+    tft.drawString("Temp min", 6, 20);
+    tft.fillRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_DARKGREY);
+    tft.drawRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_WHITE);
+    tft.drawString("Temp max", 6, 70);
+    tft.fillRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_DARKGREY);
+    tft.drawRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_WHITE);
+    tft.drawString("Interval", 6, 120);
+    tft.fillRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_DARKGREY);
+    tft.drawRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_WHITE);
+
     updateDisplayS();
 
     // Draw keypad Setup
@@ -1015,10 +1002,12 @@ void loop(void) {
   }
 
   if (display_changed && ! setup_screen) {
-    // ----- DISPLAY ROUTINE INIT ----- //
+    // ----- NORMAL DISPLAY INIT ----- //
+
+    getTemperature();
+    getTime();
 
     // Clear the screen
-    getTemperature();
     tft.fillScreen(TFT_BLACK);
 
     // draw grid
@@ -1028,41 +1017,55 @@ void loop(void) {
     for (int32_t y=20; y<320; y=y+20) {
       tft.drawLine(0, y, 240, y, TFT_NAVY);
     }
-    //tft.drawLine(239, 0, 239, 320, TFT_DARKGREEN);
-    //tft.drawLine(0, 319, 240, 319, TFT_DARKGREEN);
 
-    updateDisplayN();
-
-    // Draw number display area and frame
-    tft.setTextDatum(TL_DATUM);    // Use top left corner as text coord datum
+    tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+    tft.setTextSize(1);
     tft.setFreeFont(Small_FONT);
     tft.setTextColor(TFT_CYAN);
+    tft.drawString("Room temp", 27, 10);
+    tft.drawString("Set", 165, 10);
 
-    //tft.drawRect(DISP1_N_X, DISP1_N_Y, DISP1_N_W, DISP1_N_H, TFT_WHITE);
-    //tft.drawRect(DISP2_N_X, DISP2_N_Y, DISP2_N_W, DISP2_N_H, TFT_WHITE);
-    //tft.drawRect(DISP3_N_X, DISP3_N_Y, DISP3_N_W, DISP3_N_H, TFT_WHITE);
 
-    tft.setTextSize(1);
-    tft.drawString("Room", 17, 10);
-    tft.drawString("Set", 102, 10);
-    if (manual) {
-      state = "M";
-      tft.setTextColor(TFT_RED);
-    } else {
-      state = "A";
+    tft.drawString("WiFi SSID: " + WiFi.SSID(), 5, y_line1 + 30);
+    tft.drawString("LAN IP: " + String(lanIP), 5, y_line1 + 60);
+    tft.drawString("Inet IP: " + String(inetIP), 5, y_line1 + 90);
+    tft.drawString("Time: ", 5, y_line1 + 120);
+
+    state = manual ? "manual" : "auto";
+    wRelais = tft.drawString("Relais: ", 5, y_line1);
+    if (state == "auto") {
+      tft.setTextColor(TFT_BLACK);
+      tft.drawString("manual", wRelais + 5, y_line1);
       tft.setTextColor(TFT_GREEN);
+      wState = tft.drawString("auto", wRelais + 5, y_line1);
+      tft.setTextColor(TFT_CYAN);
+      wComma = tft.drawString(", ", wRelais + wState + 5, y_line1);
+    } else {
+      tft.setTextColor(TFT_BLACK);
+      tft.drawString("auto", wRelais + 5, y_line1);
+      tft.setTextColor(TFT_RED);
+      wState = tft.drawString("manual", wRelais + 5, y_line1);
+      tft.setTextColor(TFT_CYAN);
+      wComma = tft.drawString(", ", wRelais + wState + 5, y_line1);
     }
-    tft.drawString("Relais: " + state, 158, 10);
-    tft.setTextColor(TFT_CYAN);
-    tft.drawString("WiFi SSID: " + WiFi.SSID(), 5, 95);
-    tft.drawString("LAN IP: " + String(lanIP), 5, 125);
-    tft.drawString("Inet IP: " + String(inetIP), 5, 155);
-    tft.drawString("Time: ", 5, 185);
-    getTime();
+    tft.setFreeFont(&FreeSans12pt7b);
+    if (relaisState == "ON") {
+      tft.setTextColor(TFT_BLACK);
+      tft.drawString(String("OFF"), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.setTextColor(TFT_GREEN);
+      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, y_line1 - 4);
+    }
+    if (relaisState == "OFF") {
+      tft.setTextColor(TFT_BLACK);
+      tft.drawString(String("ON"), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.setTextColor(TFT_RED);
+      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, y_line1 - 4);
+    }
+
     tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, 185);
-    tft.setTextColor(TFT_CYAN);
-    tft.drawString(String(timeNow), 55, 185);
+    tft.drawString(String(timeOld), 55, y_line1 + 120 - 4);
+    tft.setTextColor(TFT_DARKGREEN);
+    tft.drawString(String(timeNow), 55, y_line1 + 120 - 4);
 
     updateDisplayN();
 
@@ -1083,24 +1086,23 @@ void loop(void) {
       }
     }
     display_changed = false;
-    // ----- DISPLAY ROUTINE INIT END ----- //
+    // ----- NORMAL DISPLAY INIT END ----- //
   }
 
   if ((timeOld != timeNow) && (! setup_screen)) {
-    tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-    tft.setFreeFont(Small_FONT);
+    tft.setFreeFont(&FreeSans12pt7b);
     tft.setTextSize(1);
     tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, 185);
-    tft.setTextColor(TFT_CYAN);
-    tft.drawString(String(timeNow), 55, 185);
+    tft.drawString(String(timeOld), 55, y_line1 + 120 - 4);
+    tft.setTextColor(TFT_DARKGREEN);
+    tft.drawString(String(timeNow), 55, y_line1 + 120 - 4);
     timeOld = timeNow;
   }
 
   // --- key was pressed --- //
 
   if (setup_screen) {
-    // ----- SETUP ROUTINE ----- //
+    // ----- SETUP DISPLAY ----- //
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     // Pressed will be set true is there is a valid touch on the screen
     pressed = tft.getTouch(&t_x, &t_y);
@@ -1212,11 +1214,11 @@ void loop(void) {
       }
     }
     pressed = 0;
-    // ----- SETUP ROUTINE END ----- //
+    // ----- SETUP DISPLAY END ----- //
   }
 
   if (! setup_screen) {
-    // ----- DISPLAY ROUTINE ----- //
+    // ----- NORMAL DISPLAY ----- //
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     // Pressed will be set true is there is a valid touch on the screen
     pressed = tft.getTouch(&t_x, &t_y);
@@ -1251,6 +1253,9 @@ void loop(void) {
             status_timer = millis();
             status("Temperature lowered");
         }
+
+        updateDisplayN();
+
         // Enter Setup
         if (b == 2) {
           Serial.println(F("Enter Setup screen"));
@@ -1260,13 +1265,11 @@ void loop(void) {
           delay(500);
         }
 
-        updateDisplayN();
-
         delay(10); // UI debouncing
       }
     }
     pressed = 0;
-    // ----- DISPLAY ROUTINE END ----- //
+    // ----- NORMAL DISPLAY END ----- //
   }
   
   if ((prevGetTime + 60000) <= millis())
@@ -1309,4 +1312,4 @@ void loop(void) {
   server.handleClient();
   if (! statusCleared)
     status_clear();
-} // void loop() END
+} // loop() END
