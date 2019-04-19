@@ -127,6 +127,7 @@ const static String sFile = "/settings.txt";  // SPIFFS file name must start wit
 const static String configHost = "temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
 unsigned long uptime = (millis() / 1000 );
 unsigned long status_timer = millis();
+unsigned long prevGetTime = millis();
 unsigned long prevTime = 0;
 unsigned long prevTimeIP = 0;
 bool emptyFile = false;
@@ -798,6 +799,8 @@ void updateDisplayS() {
 }
 
 void getTime() {
+  prevGetTime = millis();
+  Serial.print("= getTime: ");
   // update the NTP client and get the UNIX UTC timestamp 
   timeClient.update();
   unsigned long epochTime =  timeClient.getEpochTime();
@@ -815,6 +818,7 @@ void getTime() {
 
   timeNow = "";
   // now format the Time variables into strings with proper names for month, day etc
+  /*
   date += days[weekday(local)-1];
   date += ", ";
   date += months[month(local)-1];
@@ -822,7 +826,7 @@ void getTime() {
   date += day(local);
   date += ", ";
   date += year(local);
-
+  */
   // format the time to 12-hour format with AM/PM and no seconds
   if(hour(local) < 10)  // add a zero if minute is under 10
     timeNow += "0";
@@ -831,10 +835,11 @@ void getTime() {
   if(minute(local) < 10)  // add a zero if second is under 10
     timeNow += "0";
   timeNow += minute(local);
-  timeNow += ":";
-  if(second(local) < 10)  // add a zero if second is under 10
-    timeNow += "0";
-  timeNow += second(local);
+  //timeNow += ":";
+  //if(second(local) < 10)  // add a zero if second is under 10
+  //  timeNow += "0";
+  //timeNow += second(local);
+  Serial.println(timeNow + ", epochTime= " + epochTime);
 }
 
 //------------------------------------------------------------------------------------------
@@ -973,6 +978,7 @@ void setup() {
   });
   server.on("/clear", clearSpiffs);
 
+  getTime();
   server.begin();
   debug_vars();
 } // void setup() END
@@ -1015,6 +1021,16 @@ void loop(void) {
     getTemperature();
     tft.fillScreen(TFT_BLACK);
 
+    // draw grid
+    for (int32_t x=20; x<240; x=x+20) {
+      tft.drawLine(x, 0, x, 320, TFT_NAVY);
+    }
+    for (int32_t y=20; y<320; y=y+20) {
+      tft.drawLine(0, y, 240, y, TFT_NAVY);
+    }
+    //tft.drawLine(239, 0, 239, 320, TFT_DARKGREEN);
+    //tft.drawLine(0, 319, 240, 319, TFT_DARKGREEN);
+
     updateDisplayN();
 
     // Draw number display area and frame
@@ -1042,6 +1058,11 @@ void loop(void) {
     tft.drawString("LAN IP: " + String(lanIP), 5, 125);
     tft.drawString("Inet IP: " + String(inetIP), 5, 155);
     tft.drawString("Time: ", 5, 185);
+    getTime();
+    tft.setTextColor(TFT_BLACK);
+    tft.drawString(String(timeOld), 55, 185);
+    tft.setTextColor(TFT_CYAN);
+    tft.drawString(String(timeNow), 55, 185);
 
     updateDisplayN();
 
@@ -1061,24 +1082,12 @@ void loop(void) {
         tft.setFreeFont(Italic_FONT);
       }
     }
-    // ----- DISPLAY ROUTINE INIT END ----- //
     display_changed = false;
-
-    // draw grid
-    for (int32_t x=10; x<250; x=x+10) {
-      tft.drawLine(x, 0, x, 320, TFT_DARKGREEN);
-    }
-    for (int32_t y=10; y<330; y=y+10) {
-      tft.drawLine(0, y, 240, y, TFT_DARKGREEN);
-    }
-    //tft.drawLine(239, 0, 239, 320, TFT_DARKGREEN);
-    //tft.drawLine(0, 319, 240, 319, TFT_DARKGREEN);
+    // ----- DISPLAY ROUTINE INIT END ----- //
   }
 
-  getTime();
   if ((timeOld != timeNow) && (! setup_screen)) {
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-    //tft.fillRect(50, 180, 60, 25, TFT_BLACK);
     tft.setFreeFont(Small_FONT);
     tft.setTextSize(1);
     tft.setTextColor(TFT_BLACK);
@@ -1260,6 +1269,9 @@ void loop(void) {
     // ----- DISPLAY ROUTINE END ----- //
   }
   
+  if ((prevGetTime + 60000) <= millis())
+    getTime();
+
   // from thermostat.ino
   unsigned long presTime = millis();
   unsigned long passed = presTime - prevTime;
