@@ -128,6 +128,7 @@ unsigned long status_timer = millis();
 unsigned long prevGetTime = millis();
 unsigned long prevTime = 0;
 unsigned long prevTimeIP = 0;
+unsigned long setupStarted = millis();
 bool emptyFile = false;
 bool heater = true;
 bool manual = false;
@@ -969,6 +970,15 @@ void setup() {
 
 void loop(void) {
   int pressed = 0;
+
+  // auto exit setup screen after 20s
+  if ((millis() >= setupStarted + 20000) && setup_screen) {
+    setup_screen = false;
+    display_changed = true;
+    status("Auto exit Setup screen");
+    delay(500);
+  }
+
   if (display_changed && setup_screen) {
     // ----- SETUP DISPLAY INIT ----- //
 
@@ -1299,6 +1309,7 @@ void loop(void) {
           setup_screen = true;
           display_changed = true;
           status("Enter Setup screen");
+          setupStarted = millis();
           delay(500);
         }
 
