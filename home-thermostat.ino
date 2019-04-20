@@ -47,7 +47,7 @@
 // ----- NORMAL DISPLAY ----- //
 // Keypad start position, key sizes and spacing
 #define KEY_N_X 40 // Centre of key
-#define KEY_N_Y 282 //302
+#define KEY_N_Y 285
 #define KEY_N_W 75 // Width and height
 #define KEY_N_H 30
 #define KEY_N_SPACING_X 5 // X and Y gap
@@ -70,7 +70,7 @@
 // ----- SETUP DISPLAY ----- //
 // Keypad start position, key sizes and spacing
 #define KEY_S_X 30 // Centre of key
-#define KEY_S_Y 171 //191
+#define KEY_S_Y 174
 #define KEY_S_W 58 // Width and height
 #define KEY_S_H 29
 #define KEY_S_SPACING_X 2 // X and Y gap
@@ -103,17 +103,21 @@
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 // ----- SETUP DISPLAY END ----- //
 
+#define TFT_ORNGE 0xFB21
+#define TFT_DRKGREEN 0x0547
+
 // Number length, buffer for storing it and character index
 #define NUM_LEN 16
 uint8_t numberIndex = 0;
 
 // We have a status line for messages
 #define STATUS_X 120 // Centred on this
-#define STATUS_Y 305
+#define STATUS_Y 307
 
 #define NTP_OFFSET   0 //60 * 60      // In seconds
 #define NTP_INTERVAL 60 * 60 * 1000    // In miliseconds
 #define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
+#define colorClock TFT_BLUE
 
 // from thermostat.ino
 const size_t jsonCapacity = JSON_OBJECT_SIZE(10) + 230;
@@ -129,46 +133,28 @@ bool heater = true;
 bool manual = false;
 bool debug = true;
 char lanIP[16];
-String inetIP;
-String str_c;
-String mode;
-String state;
-String WiFi_Name;
+String inetIP, str_c, mode, state, WiFi_Name, webString, relaisState, SHA1, loghost, epochTime;
 String hostname = "Donbot";
 uint8_t sha1[20];
 float temp_c = 25;
 float temp_dev;
 char number[8];
 char numberOld[8];
-String webString;
-String relaisState;
-String SHA1;
-String loghost;
-String epochTime;
 uint16_t color;
+int wRelais, wState, wComma, wP1, wP2, wP3, cursorX, cursorY, setTempOld;
 int httpsPort = 443;
 int interval = 300000;
-int cursorX;
-int cursorY;
 int temp_min = 24;
 int temp_max = 26;
 int setTemp = temp_min+(temp_max-temp_min)/2;
-int setTempOld;
-int wRelais;
-int wState;
-int wComma;
-int y_line1 = 110;
-
+int textLineY = 92;
+int textLineX = 90;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
 ESP8266WebServer server(80);
 
 // new
 int pressed = 0;
-String numberBuffer1 = String(temp_min);
-String numberBuffer2 = String(temp_max);
-String numberBuffer3 = String(interval/60000);
-String numberBuffer4 = String(manual);
 bool display_changed = true;
 bool setup_screen = false;
 bool statusCleared = true;
@@ -194,12 +180,11 @@ TFT_eSPI_Button key[16];
 // Set up the NTP UDP client
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
-String date;
-String timeNow;
-String timeOld;
+String date, timeNow, timeOld;
 const char * days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"} ;
 const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"} ;
 const char * ampm[] = {"AM", "PM"} ;
+int minuteNow, hourNow, minuteOld, hourOld, clockX, clockY, clockRadius, x2, y2, x3, y3, x4, y4, x5, y5, x4_old, y4_old, x5_old, y5_old;
 
 //------------------------------------------------------------------------------------------
 
@@ -452,7 +437,7 @@ void writeSettingsWeb() {
     client->setBufferSizes(1024, 1024);
   }
 
-  from_str();
+  fromStr();
   client->setFingerprint(sha1);
   String msg = String("device=" + hostname + "&uploadJson=" + urlEncode(outputJson));
   if (debug) {
@@ -484,7 +469,7 @@ void writeSettingsWeb() {
     Serial.printf("[HTTPS] Unable to connect\n");
   }
   if (debug)
-    debug_vars();
+    debugVars();
 }
 
 //// local webserver handlers / send data to logserver
@@ -532,7 +517,7 @@ void logToWebserver() {
   }
 
   WiFiClientSecure webClient;
-  from_str();
+  fromStr();
   webClient.setFingerprint(sha1);
   HTTPClient https;
   if (https.begin(webClient, loghost, httpsPort, pathQuery)) {
@@ -560,7 +545,7 @@ void logToWebserver() {
 ////// Miscellaneous functions
 
 //// print variables for debug
-void debug_vars() {
+void debugVars() {
   Serial.println(F("# DEBUG:"));
   Serial.print(F("- hostname: "));
   Serial.println(hostname);
@@ -602,7 +587,7 @@ void debug_vars() {
 }
 
 //// transform SHA1 to hex format needed for setFingerprint (from aa:ab:etc. to 0xaa, 0xab, etc.)
-void from_str() {
+void fromStr() {
   int j = 0;
   for (int i = 0; i < 60; i = i + 3) {
     String x = ("0x" + SHA1.substring(i, i+2));
@@ -712,7 +697,7 @@ void status(const char *msg) {
   statusCleared = false;
 }
 
-void status_clear() {
+void statusClear() {
   if (status_timer < (millis() - 2000)) {
     status(""); // Clear the old status
     statusCleared = true;
@@ -731,7 +716,7 @@ void updateDisplayN() {
   if (temp_c <= temp_min) 
     tft.setTextColor(TFT_BLUE);
   if (temp_c >= temp_max) 
-    tft.setTextColor(0xFBE0);
+    tft.setTextColor(TFT_ORNGE);
   if (temp_c > temp_min && temp_c < temp_max) 
     tft.setTextColor(TFT_YELLOW);
   tft.drawString(String(number), DISP1_N_X + 4, DISP1_N_Y + 9);
@@ -779,33 +764,68 @@ void getTime() {
   TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
   Timezone CE(CEST, CET);
   local = CE.toLocal(utc);
+  minuteNow = minute(local);
+  hourNow = hour(local);
 
   timeNow = "";
   // now format the Time variables into strings with proper names for month, day etc
-  /*
-  date += days[weekday(local)-1];
+  date = days[weekday(local)-1];
   date += ", ";
   date += months[month(local)-1];
   date += " ";
   date += day(local);
   date += ", ";
   date += year(local);
-  */
-  // format the time to 12-hour format with AM/PM and no seconds
-  if(hour(local) < 10)  // add a zero if minute is under 10
+  if(hourNow < 10)  // add a zero if hour is under 10
     timeNow += "0";
-  timeNow += hour(local);
+  timeNow += hourNow;
   timeNow += ":";
-  if(minute(local) < 10)  // add a zero if second is under 10
+  if(minuteNow < 10)  // add a zero if minute is under 10
     timeNow += "0";
-  timeNow += minute(local);
-  //timeNow += ":";
-  //if(second(local) < 10)  // add a zero if second is under 10
-  //  timeNow += "0";
-  //timeNow += second(local);
-  Serial.println(timeNow + ", epochTime= " + epochTime);
+  timeNow += minuteNow;
+  Serial.println(epochTime + " => " + String(date) + " - " + String(timeNow));
 }
 
+void drawClockFace(int clockX,int clockY,int clockRadius) {
+  //clock face
+  tft.drawCircle(clockX,clockY,clockRadius + 1,colorClock);
+  //tft.drawCircle(clockX,clockY,clockRadius-5,colorClock);
+  //hour ticks
+  for( int z=0; z < 360;z= z + 30 ){
+    //Begin at 0° and stop at 360°
+    float angle = z ;
+    angle=(angle/57.29577951) ; //Convert degrees to radians
+    x2=(clockX+(sin(angle)*clockRadius));
+    y2=(clockY-(cos(angle)*clockRadius));
+    x3=(clockX+(sin(angle)*(clockRadius-4)));
+    y3=(clockY-(cos(angle)*(clockRadius-4)));
+    tft.drawLine(x2,y2,x3,y3,colorClock);
+  }
+}
+
+void drawClockTime(int clockX,int clockY,int clockRadius) {
+  float angle = minuteNow * 6 ;
+  angle = (angle/57.29577951) ; //Convert degrees to radians
+  x4=(clockX+(sin(angle)*(clockRadius-11)));
+  y4=(clockY-(cos(angle)*(clockRadius-11)));
+  if (minuteOld != minuteNow)
+    tft.drawLine(clockX,clockY,x4_old,y4_old,TFT_BLACK);
+  tft.drawLine(clockX,clockY,x4,y4,colorClock);
+  angle = hourNow * 30 + int((minuteNow / 12) * 6 )   ;
+  angle=(angle/57.29577951) ; //Convert degrees to radians
+  x5=(clockX+(sin(angle)*(clockRadius-15)));
+  y5=(clockY-(cos(angle)*(clockRadius-15)));
+  if (hourOld != hourNow)
+    tft.drawLine(clockX,clockY,x5_old,y5_old,TFT_BLACK);
+  tft.drawLine(clockX,clockY,x5,y5,colorClock);
+
+  minuteOld = minuteNow;
+  hourOld = hourNow;
+  x4_old = x4;
+  y4_old = y4;
+  x5_old = x5;
+  y5_old = y5;
+}
 //------------------------------------------------------------------------------------------
 
 void setup() {
@@ -876,9 +896,7 @@ void setup() {
     {
       // Delete if we want to re-calibrate
       SPIFFS.remove(CALIBRATION_FILE);
-    }
-    else
-    {
+    } else {
       File f = SPIFFS.open(CALIBRATION_FILE, "r");
       if (f) {
         if (f.readBytes((char *)calData, 14) == 14)
@@ -938,13 +956,13 @@ void setup() {
     getTemperature();
     autoSwitchRelais();
     if (debug)
-      debug_vars();
+      debugVars();
   });
   server.on("/clear", clearSpiffs);
 
   getTime();
   server.begin();
-  debug_vars();
+  debugVars();
 } // setup() END
 
 //------------------------------------------------------------------------------------------
@@ -958,12 +976,14 @@ void loop(void) {
     tft.fillScreen(TFT_BLACK);
 
     // draw grid
+    /*
     for (int32_t x=20; x<240; x=x+20) {
       tft.drawLine(x, 0, x, 320, TFT_NAVY);
     }
     for (int32_t y=20; y<320; y=y+20) {
       tft.drawLine(0, y, 240, y, TFT_NAVY);
     }
+    */
 
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
     tft.setTextSize(1);
@@ -1011,12 +1031,14 @@ void loop(void) {
     tft.fillScreen(TFT_BLACK);
 
     // draw grid
+    /*
     for (int32_t x=20; x<240; x=x+20) {
       tft.drawLine(x, 0, x, 320, TFT_NAVY);
     }
     for (int32_t y=20; y<320; y=y+20) {
       tft.drawLine(0, y, 240, y, TFT_NAVY);
     }
+    */
 
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
     tft.setTextSize(1);
@@ -1026,48 +1048,58 @@ void loop(void) {
     tft.drawString("Set", 165, 10);
 
 
-    tft.drawString("WiFi SSID: " + WiFi.SSID(), 5, y_line1 + 30);
-    tft.drawString("LAN IP: " + String(lanIP), 5, y_line1 + 60);
-    tft.drawString("Inet IP: " + String(inetIP), 5, y_line1 + 90);
-    tft.drawString("Time: ", 5, y_line1 + 120);
+    tft.drawString("WiFi: " + WiFi.SSID(), 5, textLineY + 30);
+    tft.drawString("IP: " + String(lanIP), 5, textLineY + 60);
+    wP1 = tft.drawString("21:00-06:30 21", textLineX, textLineY + 90);
+    tft.drawCircle(textLineX + wP1 + 6, textLineY + 93, 2, TFT_CYAN);
+    tft.drawString("C", textLineX + wP1 + 10, textLineY + 90);
+    wP2 = tft.drawString("06:30-09:30 23", textLineX, textLineY + 120);
+    tft.drawCircle(textLineX + wP2 + 6, textLineY + 123, 2, TFT_CYAN);
+    tft.drawString("C", textLineX + wP2 + 10, textLineY + 120);
+    wP3 = tft.drawString("09:30-21:00 25", textLineX, textLineY + 150);
+    tft.drawCircle(textLineX + wP3 + 6, textLineY + 153, 2, TFT_CYAN);
+    tft.drawString("C", textLineX + wP3 + 10, textLineY + 150);
 
     state = manual ? "manual" : "auto";
-    wRelais = tft.drawString("Relais: ", 5, y_line1);
+    wRelais = tft.drawString("Heating: ", 5, textLineY);
     if (state == "auto") {
       tft.setTextColor(TFT_BLACK);
-      tft.drawString("manual", wRelais + 5, y_line1);
+      tft.drawString("manual", wRelais + 5, textLineY);
       tft.setTextColor(TFT_GREEN);
-      wState = tft.drawString("auto", wRelais + 5, y_line1);
+      wState = tft.drawString("auto", wRelais + 5, textLineY);
       tft.setTextColor(TFT_CYAN);
-      wComma = tft.drawString(", ", wRelais + wState + 5, y_line1);
+      wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
     } else {
       tft.setTextColor(TFT_BLACK);
-      tft.drawString("auto", wRelais + 5, y_line1);
+      tft.drawString("auto", wRelais + 5, textLineY);
       tft.setTextColor(TFT_RED);
-      wState = tft.drawString("manual", wRelais + 5, y_line1);
+      wState = tft.drawString("manual", wRelais + 5, textLineY);
       tft.setTextColor(TFT_CYAN);
-      wComma = tft.drawString(", ", wRelais + wState + 5, y_line1);
+      wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
     }
     tft.setFreeFont(&FreeSans12pt7b);
     if (relaisState == "ON") {
       tft.setTextColor(TFT_BLACK);
-      tft.drawString(String("OFF"), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.drawString(String("OFF"), wRelais + wState + wComma + 10, textLineY - 4);
       tft.setTextColor(TFT_GREEN);
-      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, textLineY - 4);
     }
     if (relaisState == "OFF") {
       tft.setTextColor(TFT_BLACK);
-      tft.drawString(String("ON"), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.drawString(String("ON"), wRelais + wState + wComma + 10, textLineY - 4);
       tft.setTextColor(TFT_RED);
-      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, y_line1 - 4);
+      tft.drawString(String(relaisState), wRelais + wState + wComma + 10, textLineY - 4);
     }
 
+    /*
     tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, y_line1 + 120 - 4);
-    tft.setTextColor(TFT_DARKGREEN);
-    tft.drawString(String(timeNow), 55, y_line1 + 120 - 4);
+    tft.drawString(String(timeOld), 55, textLineY + 120 - 4);
+    tft.setTextColor(TFT_DRKGREEN);
+    tft.drawString(String(timeNow), 55, textLineY + 120 - 4);
+    */
 
     updateDisplayN();
+    drawClockFace(40, 220, 35);
 
     // Draw keypad Display
     for (uint8_t row = 0; row < 1; row++) {
@@ -1089,15 +1121,20 @@ void loop(void) {
     // ----- NORMAL DISPLAY INIT END ----- //
   }
 
+  if (! setup_screen)
+    drawClockTime(40, 220, 35);
+
+  /*
   if ((timeOld != timeNow) && (! setup_screen)) {
     tft.setFreeFont(&FreeSans12pt7b);
     tft.setTextSize(1);
     tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, y_line1 + 120 - 4);
-    tft.setTextColor(TFT_DARKGREEN);
-    tft.drawString(String(timeNow), 55, y_line1 + 120 - 4);
+    tft.drawString(String(timeOld), 55, textLineY + 120 - 4);
+    tft.setTextColor(TFT_DRKGREEN);
+    tft.drawString(String(timeNow), 55, textLineY + 120 - 4);
     timeOld = timeNow;
   }
+  */
 
   // --- key was pressed --- //
 
@@ -1279,18 +1316,17 @@ void loop(void) {
   unsigned long presTime = millis();
   unsigned long passed = presTime - prevTime;
   if (passed > interval) {
-    display_changed = true;
     Serial.println(F("\nInterval passed"));
-    getInetIP();
-    if (readSettingsWeb() != 200) // first, try reading settings from webserver
-      readSettingsFile(); // if failed, read settings from SPIFFS
+    display_changed = true;
     prevTime = presTime; // save the last time
+    getInetIP();
 
+    readSettingsFile(); // read settings from SPIFFS
     if (emptyFile) { // settings file does not exist
       if (readSettingsWeb() != 200) { // first, try reading settings from webserver
         Serial.println(F("Switching relais off: no settings found on SPIFFS OR webserver!"));
         switchRelais("OFF");
-        debug_vars();
+        debugVars();
         Serial.println(F("Waiting for settings to be sent..."));
         delay(500);
       } else {
@@ -1300,7 +1336,7 @@ void loop(void) {
       getTemperature();
       autoSwitchRelais();
       if (debug)
-        debug_vars();
+        debugVars();
       logToWebserver();
     }
 
@@ -1311,5 +1347,5 @@ void loop(void) {
   }
   server.handleClient();
   if (! statusCleared)
-    status_clear();
+    statusClear();
 } // loop() END
