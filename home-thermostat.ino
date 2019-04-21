@@ -94,21 +94,25 @@
 #define DISP3_S_Y 105
 #define DISP3_S_W 53
 #define DISP3_S_H 45
-
-// Numeric display box S3 size and location
-#define DISP4_S_X 181
-#define DISP4_S_Y 105
-#define DISP4_S_W 53
-#define DISP4_S_H 45
-TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 // ----- SETUP DISPLAY END ----- //
+
+// ----- SCHEDULE DISPLAY ----- //
+// Keypad start position, key sizes and spacing
+#define KEY_P_X 183 // Centre of key
+#define KEY_P_Y 40
+#define KEY_P_W 30 // Width and height
+#define KEY_P_H 25
+#define KEY_P_SPACING_X 3 // X and Y gap
+#define KEY_P_SPACING_Y 5
+#define KEY_P_TEXTSIZE 1   // Font size multiplier
+
+// Numeric display of scheduled programs
+#define DISP_P_X 5
+#define DISP_P_Y 32
+// ----- SCHEDULE DISPLAY END ----- //
 
 #define TFT_ORNGE 0xFB21
 #define TFT_DRKGREEN 0x0547
-
-// Number length, buffer for storing it and character index
-#define NUM_LEN 16
-uint8_t numberIndex = 0;
 
 // We have a status line for messages
 #define STATUS_X 120 // Centred on this
@@ -117,7 +121,12 @@ uint8_t numberIndex = 0;
 #define NTP_OFFSET   0 //60 * 60      // In seconds
 #define NTP_INTERVAL 60 * 60 * 1000    // In miliseconds
 #define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
-#define colorClock TFT_BLUE
+
+#define BUTTON_LABEL 0x7BEF
+#define BUTTON_PLUS 0xF442
+#define BUTTON_MINUS 0x353E
+#define EXIT_MENU TFT_DARKGREEN //0x07E0
+#define COLOR_CLOCK 0x3ED7
 
 // from thermostat.ino
 const size_t jsonCapacity = JSON_OBJECT_SIZE(10) + 230;
@@ -129,6 +138,7 @@ unsigned long prevGetTime = millis();
 unsigned long prevTime = 0;
 unsigned long prevTimeIP = 0;
 unsigned long setupStarted = millis();
+unsigned long scheduleStarted = millis();
 bool emptyFile = false;
 bool heater = true;
 bool manual = false;
@@ -150,42 +160,60 @@ int temp_max = 26;
 int setTemp = temp_min+(temp_max-temp_min)/2;
 int textLineY = 92;
 int textLineX = 90;
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature DS18B20(&oneWire);
-ESP8266WebServer server(80);
 
 // new
 int pressed = 0;
 bool display_changed = true;
 bool setup_screen = false;
+bool program_screen = false;
 bool statusCleared = true;
+int hourP1_from, hourP2_from, hourP3_from, hourP1_to, hourP2_to, hourP3_to;
+int minuteP1_from, minuteP2_from, minuteP3_from, minuteP1_to, minuteP2_to, minuteP3_to;
+char hourP1d_from[3], hourP2d_from[3], hourP3d_from[3], hourP1d_to[3], hourP2d_to[3], hourP3d_to[3];
+char minuteP1d_from[3], minuteP2d_from[3], minuteP3d_from[3], minuteP1d_to[3], minuteP2d_to[3], minuteP3d_to[3];
+
 // Create 16 keys for the setup keypad
 char keyLabel1[16][5] = {"rel", "min", "max", "int", "On", "+", "+", "+", "Off", "-", "-", "-", "Auto", "RST", "Save", "Exit"};
 uint16_t keyColor1[16] = {
-                        TFT_DARKGREY, TFT_DARKGREY, TFT_DARKGREY, TFT_DARKGREY,
-                        TFT_RED, TFT_RED, TFT_RED, TFT_RED,
-                        TFT_BLUE, TFT_BLUE, TFT_BLUE, TFT_BLUE,
-                        TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN, TFT_DARKGREEN
+                        BUTTON_LABEL, BUTTON_LABEL, BUTTON_LABEL, BUTTON_LABEL,
+                        BUTTON_PLUS, BUTTON_PLUS, BUTTON_PLUS, BUTTON_PLUS,
+                        BUTTON_MINUS, BUTTON_MINUS, BUTTON_MINUS, BUTTON_MINUS,
+                        EXIT_MENU, EXIT_MENU, EXIT_MENU, EXIT_MENU
                         };
 // Create 3 keys for the display keypad
 char keyLabel2[3][6] = {"+", "-", "Setup"};
-uint16_t keyColor2[15] = {
-                        TFT_RED,
-                        TFT_BLUE,
-                        TFT_DARKGREEN
+uint16_t keyColor2[3] = {
+                        BUTTON_PLUS,
+                        BUTTON_MINUS,
+                        EXIT_MENU
+                        };
+// Create 7 keys for the display keypad
+char keyLabel3[6][2] = {"-", "+", "-", "+", "-", "+"};
+uint16_t keyColor3[7] = {
+                        BUTTON_MINUS, BUTTON_PLUS,
+                        BUTTON_MINUS, BUTTON_PLUS,
+                        BUTTON_MINUS, BUTTON_PLUS,
+                        EXIT_MENU
                         };
 // Invoke the TFT_eSPI button class and create all the button objects
 TFT_eSPI_Button key[16];
 // from thermostat.ino
 
 // Set up the NTP UDP client
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 String date, timeNow, timeOld;
 const char * days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"} ;
 const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"} ;
 const char * ampm[] = {"AM", "PM"} ;
 int minuteNow, hourNow, minuteOld, hourOld, clockX, clockY, clockRadius, x2, y2, x3, y3, x4, y4, x5, y5, x4_old, y4_old, x5_old, y5_old;
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature DS18B20(&oneWire);
+ESP8266WebServer server(80);
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
+
+TFT_eSPI tft = TFT_eSPI(); // Invoke custom TFT library
 
 //------------------------------------------------------------------------------------------
 
@@ -681,6 +709,24 @@ String formatBytes(size_t bytes) {
 //// WiFi config mode
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println(F("Opening configuration portal"));
+  tft.fillScreen(TFT_BLACK); // Black screen fill
+  tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+  tft.setTextColor(TFT_YELLOW);
+  tft.setFreeFont(Bold_FONT);
+  tft.setTextSize(1);
+  tft.drawString("WiFi Configuration", 5, 30);
+  tft.setTextColor(TFT_BLUE);
+  tft.drawString("IP:", 5, 60);
+  tft.setTextColor(TFT_GREEN);
+  tft.drawString("10.0.1.1", 25, 90);
+  tft.setTextColor(TFT_BLUE);
+  tft.drawString("SSID:", 5, 120);
+  tft.setTextColor(TFT_GREEN);
+  tft.drawString(hostname, 25, 150);
+  tft.setTextColor(TFT_BLUE);
+  tft.drawString("Password: ", 5, 180);
+  tft.setTextColor(TFT_GREEN);
+  tft.drawString("pass4esp", 25, 210);
 }
 
 //void touch_calibrate() {
@@ -733,19 +779,63 @@ void updateDisplayN() {
 
 void updateDisplayS() {
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-  tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, TFT_DARKGREY);
-  tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, TFT_DARKGREY);
-  tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP1_S_X + 4, DISP1_S_Y + 1, DISP1_S_W - 5, DISP1_S_H - 2, BUTTON_LABEL);
+  tft.fillRect(DISP2_S_X + 4, DISP2_S_Y + 1, DISP2_S_W - 5, DISP2_S_H - 2, BUTTON_LABEL);
+  tft.fillRect(DISP3_S_X + 4, DISP3_S_Y + 1, DISP3_S_W - 5, DISP3_S_H - 2, BUTTON_LABEL);
 
   // Update the number display fields
   tft.setFreeFont(&FreeSans18pt7b);
   tft.setTextColor(TFT_CYAN);  // Set the font color
   int xwidth1 = tft.drawString(String(temp_min), DISP1_S_X + 4, DISP1_S_Y + 9);
-  tft.fillRect(DISP1_S_X + 4 + xwidth1, DISP1_S_Y + 1, DISP1_S_W - xwidth1 - 5, DISP1_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP1_S_X + 4 + xwidth1, DISP1_S_Y + 1, DISP1_S_W - xwidth1 - 5, DISP1_S_H - 2, BUTTON_LABEL);
   int xwidth2 = tft.drawString(String(temp_max), DISP2_S_X + 4, DISP2_S_Y + 9);
-  tft.fillRect(DISP2_S_X + 4 + xwidth2, DISP2_S_Y + 1, DISP2_S_W - xwidth2 - 5, DISP2_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP2_S_X + 4 + xwidth2, DISP2_S_Y + 1, DISP2_S_W - xwidth2 - 5, DISP2_S_H - 2, BUTTON_LABEL);
   int xwidth3 = tft.drawString(String(interval/60000), DISP3_S_X + 4, DISP3_S_Y + 9);
-  tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, TFT_DARKGREY);
+  tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, BUTTON_LABEL);
+}
+
+void updateDisplayP() {
+  tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
+
+  // set some default programs
+  hourP1_from = 21;
+  minuteP1_from = 0;
+  hourP2_from = 6;
+  minuteP2_from = 30;
+  hourP3_from = 9;
+  minuteP3_from = 30;
+  hourP1_to = 6;
+  minuteP1_to = 30;
+  hourP2_to = 9;
+  minuteP2_to = 30;
+  hourP3_to = 21;
+  minuteP3_to = 0;
+
+  sprintf(hourP1d_from, "%02d", hourP1_from);
+  sprintf(hourP2d_from, "%02d", hourP2_from);
+  sprintf(hourP3d_from, "%02d", hourP3_from);
+  sprintf(minuteP1d_from, "%02d", minuteP1_from);
+  sprintf(minuteP2d_from, "%02d", minuteP2_from);
+  sprintf(minuteP3d_from, "%02d", minuteP3_from);
+  sprintf(hourP1d_to, "%02d", hourP1_to);
+  sprintf(hourP2d_to, "%02d", hourP2_to);
+  sprintf(hourP3d_to, "%02d", hourP3_to);
+  sprintf(minuteP1d_to, "%02d", minuteP1_to);
+  sprintf(minuteP2d_to, "%02d", minuteP2_to);
+  sprintf(minuteP3d_to, "%02d", minuteP3_to);
+
+  // Update the number display fields
+  tft.setFreeFont(Small_FONT);
+  tft.setTextColor(TFT_CYAN);  // Set the font color
+  int xwidth1a = tft.drawString("P1 ", DISP_P_X, DISP_P_Y);
+  int xwidth1b = tft.drawString(hourP1d_from, (DISP_P_X + xwidth1a + 4), DISP_P_Y);
+  int xwidth1c = tft.drawString(":", (DISP_P_X + xwidth1a + xwidth1b + 4), DISP_P_Y);
+  int xwidth1d = tft.drawString(minuteP1d_from, (DISP_P_X + xwidth1a + xwidth1b + xwidth1c + 4), DISP_P_Y);
+  int xwidth1e = tft.drawString("-", (DISP_P_X + xwidth1a + xwidth1b + xwidth1c + xwidth1d + 4), DISP_P_Y);
+  int xwidth1f = tft.drawString(hourP1d_to, (DISP_P_X + xwidth1a + xwidth1b + xwidth1c + xwidth1d + xwidth1e + 4), DISP_P_Y);
+  int xwidth1g = tft.drawString(":", (DISP_P_X + xwidth1a + xwidth1b + xwidth1c + xwidth1d + xwidth1e + xwidth1f + 4), DISP_P_Y);
+  tft.drawString(minuteP1d_to, (DISP_P_X + xwidth1a + xwidth1b + xwidth1c + xwidth1d + xwidth1e + xwidth1f + xwidth1g + 4), DISP_P_Y);
+
 }
 
 void getTime() {
@@ -760,7 +850,7 @@ void getTime() {
   utc = epochTime;
 
   // Then convert the UTC UNIX timestamp to local time
-  // Central European Time (Frankfurt, Paris)
+  // Central European Time (Berlin, Paris)
   TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
   TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
   Timezone CE(CEST, CET);
@@ -789,8 +879,8 @@ void getTime() {
 
 void drawClockFace(int clockX,int clockY,int clockRadius) {
   //clock face
-  tft.drawCircle(clockX,clockY,clockRadius + 1,colorClock);
-  //tft.drawCircle(clockX,clockY,clockRadius-5,colorClock);
+  tft.drawCircle(clockX,clockY,clockRadius + 1,COLOR_CLOCK);
+  //tft.drawCircle(clockX,clockY,clockRadius-5,COLOR_CLOCK);
   //hour ticks
   for( int z=0; z < 360;z= z + 30 ){
     //Begin at 0° and stop at 360°
@@ -800,7 +890,7 @@ void drawClockFace(int clockX,int clockY,int clockRadius) {
     y2=(clockY-(cos(angle)*clockRadius));
     x3=(clockX+(sin(angle)*(clockRadius-4)));
     y3=(clockY-(cos(angle)*(clockRadius-4)));
-    tft.drawLine(x2,y2,x3,y3,colorClock);
+    tft.drawLine(x2,y2,x3,y3,COLOR_CLOCK);
   }
 }
 
@@ -811,14 +901,14 @@ void drawClockTime(int clockX,int clockY,int clockRadius) {
   y4=(clockY-(cos(angle)*(clockRadius-11)));
   if (minuteOld != minuteNow)
     tft.drawLine(clockX,clockY,x4_old,y4_old,TFT_BLACK);
-  tft.drawLine(clockX,clockY,x4,y4,colorClock);
+  tft.drawLine(clockX,clockY,x4,y4,COLOR_CLOCK);
   angle = hourNow * 30 + int((minuteNow / 12) * 6 )   ;
   angle=(angle/57.29577951) ; //Convert degrees to radians
   x5=(clockX+(sin(angle)*(clockRadius-15)));
   y5=(clockY-(cos(angle)*(clockRadius-15)));
-  if (hourOld != hourNow)
+  if (minuteOld != minuteNow)
     tft.drawLine(clockX,clockY,x5_old,y5_old,TFT_BLACK);
-  tft.drawLine(clockX,clockY,x5,y5,colorClock);
+  tft.drawLine(clockX,clockY,x5,y5,COLOR_CLOCK);
 
   minuteOld = minuteNow;
   hourOld = hourNow;
@@ -840,7 +930,7 @@ void setup() {
   tft.setRotation(0);
 
   // Draw keypad background
-  tft.fillRect(0, 0, 240, 320, TFT_DARKGREY);
+  //tft.fillRect(0, 0, 240, 320, TFT_DARKGREY);
 
   delay(10); // UI debouncing
 
@@ -854,7 +944,7 @@ void setup() {
   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
   wifiManager.setDebugOutput(false);
   wifiManager.setAPCallback(configModeCallback);
-  if(!wifiManager.autoConnect("Joey","pass4esp")) {
+  if(!wifiManager.autoConnect("Donbot","pass4esp")) {
     delay(1000);
     Serial.println(F("Failed to connect and hit timeout, restarting..."));
     ESP.reset();
@@ -972,11 +1062,59 @@ void loop(void) {
   int pressed = 0;
 
   // auto exit setup screen after 20s
-  if ((millis() >= setupStarted + 20000) && setup_screen) {
+  if ((millis() >= (setupStarted + 10000)) && setup_screen) {
     setup_screen = false;
+    program_screen = false;
     display_changed = true;
     status("Auto exit Setup screen");
     delay(500);
+  }
+
+  // auto exit schedule screen after 20s
+  if ((millis() >= (scheduleStarted + 10000)) && program_screen) {
+    setup_screen = false;
+    program_screen = false;
+    display_changed = true;
+    status("Auto exit Schedule screen");
+    delay(500);
+  }
+
+  if (display_changed && program_screen) {
+    // ----- SCHEDULE DISPLAY INIT ----- //
+
+    // Clear the screen
+    tft.fillScreen(TFT_BLACK);
+
+    // draw grid
+    for (int32_t x=20; x<240; x=x+20) {
+      tft.drawLine(x, 0, x, 320, TFT_NAVY);
+    }
+    for (int32_t y=20; y<320; y=y+20) {
+      tft.drawLine(0, y, 240, y, TFT_NAVY);
+    }
+
+    updateDisplayP();
+    drawClockFace(40, 220, 35);
+
+    // Draw keypad Setup
+    for (uint8_t row = 0; row < 3; row++) {
+      for (uint8_t col = 0; col < 2; col++) {
+        uint8_t b = col + row * 2;
+
+        tft.setFreeFont(Bold_FONT);
+
+        key[b].initButton(&tft, KEY_P_X + col * (KEY_P_W + KEY_P_SPACING_X),
+                          KEY_P_Y + row * (KEY_P_H + KEY_P_SPACING_Y), // x, y, w, h, outline, fill, text
+                          KEY_P_W, KEY_P_H, TFT_WHITE, keyColor3[b], TFT_WHITE,
+                          keyLabel3[b], KEY_P_TEXTSIZE);
+        key[b].drawButton();
+      }
+    }
+    tft.setFreeFont(Italic_FONT);
+    key[6].initButton(&tft, 193, 285, 80, 30, TFT_WHITE, TFT_DARKGREEN, TFT_WHITE, "Exit", KEY_P_TEXTSIZE);
+    key[6].drawButton();
+    // ----- SCHEDULE DISPLAY INIT END ----- //
+    display_changed = false;
   }
 
   if (display_changed && setup_screen) {
@@ -985,28 +1123,18 @@ void loop(void) {
     // Clear the screen
     tft.fillScreen(TFT_BLACK);
 
-    // draw grid
-    /*
-    for (int32_t x=20; x<240; x=x+20) {
-      tft.drawLine(x, 0, x, 320, TFT_NAVY);
-    }
-    for (int32_t y=20; y<320; y=y+20) {
-      tft.drawLine(0, y, 240, y, TFT_NAVY);
-    }
-    */
-
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
     tft.setTextSize(1);
     tft.setFreeFont(Italic_FONT);
     tft.setTextColor(TFT_CYAN);
     tft.drawString("Temp min", 6, 20);
-    tft.fillRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_DARKGREY);
+    tft.fillRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, BUTTON_LABEL);
     tft.drawRect(DISP1_S_X, DISP1_S_Y, DISP1_S_W, DISP1_S_H, TFT_WHITE);
     tft.drawString("Temp max", 6, 70);
-    tft.fillRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_DARKGREY);
+    tft.fillRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, BUTTON_LABEL);
     tft.drawRect(DISP2_S_X, DISP2_S_Y, DISP2_S_W, DISP2_S_H, TFT_WHITE);
     tft.drawString("Interval", 6, 120);
-    tft.fillRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_DARKGREY);
+    tft.fillRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, BUTTON_LABEL);
     tft.drawRect(DISP3_S_X, DISP3_S_Y, DISP3_S_W, DISP3_S_H, TFT_WHITE);
 
     updateDisplayS();
@@ -1024,14 +1152,13 @@ void loop(void) {
                           KEY_S_W, KEY_S_H, TFT_WHITE, keyColor1[b], TFT_WHITE,
                           keyLabel1[b], KEY_S_TEXTSIZE);
         key[b].drawButton();
-        tft.setFreeFont(Italic_FONT);
       }
     }
     // ----- SETUP DISPLAY INIT END ----- //
     display_changed = false;
   }
 
-  if (display_changed && ! setup_screen) {
+  if (display_changed && ! setup_screen && ! program_screen) {
     // ----- NORMAL DISPLAY INIT ----- //
 
     getTemperature();
@@ -1039,16 +1166,6 @@ void loop(void) {
 
     // Clear the screen
     tft.fillScreen(TFT_BLACK);
-
-    // draw grid
-    /*
-    for (int32_t x=20; x<240; x=x+20) {
-      tft.drawLine(x, 0, x, 320, TFT_NAVY);
-    }
-    for (int32_t y=20; y<320; y=y+20) {
-      tft.drawLine(0, y, 240, y, TFT_NAVY);
-    }
-    */
 
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
     tft.setTextSize(1);
@@ -1101,13 +1218,6 @@ void loop(void) {
       tft.drawString(String(relaisState), wRelais + wState + wComma + 10, textLineY - 4);
     }
 
-    /*
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, textLineY + 120 - 4);
-    tft.setTextColor(TFT_DRKGREEN);
-    tft.drawString(String(timeNow), 55, textLineY + 120 - 4);
-    */
-
     updateDisplayN();
     drawClockFace(40, 220, 35);
 
@@ -1124,7 +1234,6 @@ void loop(void) {
                           KEY_N_W, KEY_N_H, TFT_WHITE, keyColor2[b], TFT_WHITE,
                           keyLabel2[b], KEY_N_TEXTSIZE);
         key[b].drawButton();
-        tft.setFreeFont(Italic_FONT);
       }
     }
     display_changed = false;
@@ -1134,20 +1243,134 @@ void loop(void) {
   if (! setup_screen)
     drawClockTime(40, 220, 35);
 
-  /*
-  if ((timeOld != timeNow) && (! setup_screen)) {
-    tft.setFreeFont(&FreeSans12pt7b);
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString(String(timeOld), 55, textLineY + 120 - 4);
-    tft.setTextColor(TFT_DRKGREEN);
-    tft.drawString(String(timeNow), 55, textLineY + 120 - 4);
-    timeOld = timeNow;
-  }
-  */
-
   // --- key was pressed --- //
 
+  if (program_screen) {
+    // ----- SCHEDULE DISPLAY ----- //
+    uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
+    // Pressed will be set true is there is a valid touch on the screen
+    pressed = tft.getTouch(&t_x, &t_y);
+
+    // Check if any key coordinate boxes contain the touch coordinates
+    for (uint8_t b = 0; b < 7; b++) {
+      if (key[b].contains(t_x, t_y)) {
+        key[b].press(true);  // tell the button it is pressed
+      } else {
+        key[b].press(false);  // tell the button it is NOT pressed
+      }
+    }
+
+    // Check if any key has changed state
+    for (uint8_t b = 0; b < 7; b++) {
+      if (b > 1) tft.setFreeFont(Italic_FONT);
+        else tft.setFreeFont(Bold_FONT);
+      if (key[b].justReleased()) key[b].drawButton();     // draw normal
+      if (key[b].justPressed()) {
+        key[b].drawButton(true);  // draw invert
+
+        // if a numberpad button, append + to the numberBuffer
+        if (b == 0 && minuteP1_from >= 0) {
+          if (minuteP1_from = 0) {
+            minuteP1_from = 30;
+            hourP1_from--;
+          } else {
+            if (minuteP1_from = 30) {
+              minuteP1_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+        if (b == 1 && hourP1_from < 24) {
+          if (minuteP1_from = 0) {
+            minuteP1_from = 30;
+          } else {
+            if (minuteP1_from = 30 && hourP1_from != 23) {
+              minuteP1_from = 0;
+              hourP1_from++;
+            }
+            if (minuteP1_from = 30 && hourP1_from == 23) {
+              hourP1_from = 0;
+              minuteP1_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+
+        if (b == 2 && minuteP2_from >= 0) {
+          if (minuteP2_from = 0) {
+            minuteP2_from = 30;
+            hourP2_from--;
+          } else {
+            if (minuteP2_from = 30) {
+              minuteP2_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+        if (b == 3 && hourP2_from < 24) {
+          if (minuteP2_from = 0) {
+            minuteP2_from = 30;
+          } else {
+            if (minuteP2_from = 30 && hourP2_from != 23) {
+              minuteP2_from = 0;
+              hourP2_from++;
+            }
+            if (minuteP2_from = 30 && hourP2_from == 23) {
+              hourP2_from = 0;
+              minuteP2_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+
+        if (b == 4 && minuteP3_from >= 0) {
+          if (minuteP3_from = 0) {
+            minuteP3_from = 30;
+            hourP3_from--;
+          } else {
+            if (minuteP3_from = 30) {
+              minuteP3_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+        if (b == 5 && hourP3_from < 24) {
+          if (minuteP3_from = 0) {
+            minuteP3_from = 30;
+          } else {
+            if (minuteP3_from = 30 && hourP3_from != 23) {
+              minuteP3_from = 0;
+              hourP3_from++;
+            }
+            if (minuteP3_from = 30 && hourP3_from == 23) {
+              hourP3_from = 0;
+              minuteP3_from = 0;
+            }
+          }
+          scheduleStarted = millis();
+        }
+
+        updateDisplayP();
+
+        // Exit Schedule
+        if (b == 6) {
+          Serial.println(F("Exit Schedule screen"));
+          setup_screen = false;
+          program_screen = false;
+          display_changed = true;
+          writeSettingsFile();
+          writeSettingsWeb();
+          status("Exit Schedule screen");
+          delay(500);
+        }
+
+        delay(10); // UI debouncing
+      }
+    }
+    pressed = 0;
+    // ----- SCHEDULE DISPLAY END ----- //
+  }
+  
   if (setup_screen) {
     // ----- SETUP DISPLAY ----- //
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
@@ -1165,7 +1388,8 @@ void loop(void) {
 
     // Check if any key has changed state
     for (uint8_t b = 4; b < 16; b++) {
-      tft.setFreeFont(Bold_FONT);
+      if (b > 11) tft.setFreeFont(Italic_FONT);
+        else tft.setFreeFont(Bold_FONT);
       if (key[b].justReleased()) key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
         key[b].drawButton(true);  // draw invert
@@ -1176,12 +1400,14 @@ void loop(void) {
             manual = true;
             switchRelais("ON");
             status_timer = millis();
+            setupStarted = millis();
             status("Turned Relais ON");
         }
         if (b == 8) {
             manual = true;
             switchRelais("OFF");
             status_timer = millis();
+            setupStarted = millis();
             status("Turned Relais OFF");
         }
 
@@ -1189,11 +1415,13 @@ void loop(void) {
         if (b == 5 && temp_min < 31) {
             temp_min++;
             status_timer = millis();
+            setupStarted = millis();
             status("Increased temp min");
         }
         if (b == 9 && temp_min > 17) {
             temp_min--;
             status_timer = millis();
+            setupStarted = millis();
             status("Decreased temp min");
         }
 
@@ -1201,11 +1429,13 @@ void loop(void) {
         if (b == 6 && temp_max < 33) {
             temp_max++;
             status_timer = millis();
+            setupStarted = millis();
             status("Increased temp max");
         }
         if (b == 10 && temp_max > 19) {
             temp_max--;
             status_timer = millis();
+            setupStarted = millis();
             status("Decreased temp max");
         }
 
@@ -1213,11 +1443,13 @@ void loop(void) {
         if (b == 7 && interval <= 840000) {
             interval = interval + 60000;
             status_timer = millis();
+            setupStarted = millis();
             status("Increased interval");
         }
         if (b == 11 && interval >= 180000) {
             interval = interval - 60000;
             status_timer = millis();
+            setupStarted = millis();
             status("Decreased interval");
         }
 
@@ -1227,6 +1459,7 @@ void loop(void) {
           temp_max = 26;
           interval = 300000;
           status_timer = millis();
+          setupStarted = millis();
           status("Values reset");
         }
 
@@ -1237,6 +1470,7 @@ void loop(void) {
           manual = false;
           autoSwitchRelais();
           status_timer = millis();
+          setupStarted = millis();
           status("Automatic mode On");
         }
 
@@ -1245,6 +1479,7 @@ void loop(void) {
           writeSettingsFile();
           writeSettingsWeb();
           status_timer = millis();
+          setupStarted = millis();
           status("Settings saved");
         }
 
@@ -1252,6 +1487,7 @@ void loop(void) {
           // Exit Setup Screen
           Serial.println(F("Exit Setup screen"));
           setup_screen = false;
+          program_screen = false;
           display_changed = true;
           status("Exit Setup screen");
           delay(500);
@@ -1264,11 +1500,24 @@ void loop(void) {
     // ----- SETUP DISPLAY END ----- //
   }
 
-  if (! setup_screen) {
+  if (! setup_screen && ! program_screen) {
     // ----- NORMAL DISPLAY ----- //
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
-    // Pressed will be set true is there is a valid touch on the screen
     pressed = tft.getTouch(&t_x, &t_y);
+
+    // Check if clock was touched
+    if ((t_x > 5) && (t_x < 75)) {
+      if ((t_y > 185) && (t_y < 255)) {
+        Serial.println(F("Enter Schedule screen"));
+        setup_screen = false;
+        program_screen = true;
+        display_changed = true;
+        status("Enter Schedule screen");
+        scheduleStarted = millis();
+        delay(500);
+      }
+    }
+    delay(10); // UI debouncing
 
     // Check if any key coordinate boxes contain the touch coordinates
     for (uint8_t b = 0; b < 3; b++) {
@@ -1281,7 +1530,8 @@ void loop(void) {
 
     // Check if any key has changed state
     for (uint8_t b = 0; b < 3; b++) {
-      tft.setFreeFont(Bold_FONT);
+      if (b > 1) tft.setFreeFont(Italic_FONT);
+        else tft.setFreeFont(Bold_FONT);
       if (key[b].justReleased()) key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
         key[b].drawButton(true);  // draw invert
