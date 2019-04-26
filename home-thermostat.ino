@@ -34,20 +34,24 @@
 // You can change this to create new calibration files.
 #define CALIBRATION_FILE "/TouchCalData2" // SPIFFS file name must start with "/".
 
-// Set REPEAT_CAL to true instead of false to run calibration
-// again, otherwise it will only be done once.
+// Set REPEAT_CAL to true to run calibration again
 // Repeat calibration if you change the screen rotation.
 #define REPEAT_CAL false
 #define FORMAT_SPIFFS false
 
-// Using two fonts since numbers are nice when bold
+// NTP settings
+#define NTP_OFFSET   0 //60 * 60      // In seconds
+#define NTP_INTERVAL 60 * 60 * 1000    // In miliseconds
+#define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
+
+// Set fonts
 #define Italic_FONT &FreeSansOblique12pt7b
 #define Small_FONT &FreeSans9pt7b
 #define Big_FONT &FreeSans24pt7b
 #define Bold_FONT &FreeSansBold12pt7b
 
 // ----- NORMAL DISPLAY ----- //
-// Keypad start position, key sizes and spacing
+// Keypad +/- manual temperature set
 #define KEY_N_X 40 // Centre of key
 #define KEY_N_Y 285
 #define KEY_N_W 75 // Width and height
@@ -55,13 +59,13 @@
 #define KEY_N_SPACING_X 5 // X and Y gap
 #define KEY_N_SPACING_Y 7
 
-// Numeric display box N1 size and location
+// Numeric display box temp_c
 #define DISP1_N_X 25
 #define DISP1_N_Y 30
 #define DISP1_N_W 100
 #define DISP1_N_H 50
 
-// Numeric display box N2 size and location
+// Numeric display box setTemp
 #define DISP2_N_X 155
 #define DISP2_N_Y 38
 #define DISP2_N_W 48
@@ -69,7 +73,7 @@
 // ----- NORMAL DISPLAY END ----- //
 
 // ----- SETUP DISPLAY ----- //
-// Keypad start position, key sizes and spacing
+// Keypad 4x3
 #define KEY_S_X 30 // Centre of key
 #define KEY_S_Y 174
 #define KEY_S_W 58 // Width and height
@@ -77,19 +81,19 @@
 #define KEY_S_SPACING_X 2 // X and Y gap
 #define KEY_S_SPACING_Y 7
 
-// Numeric display box S1 size and location
+// Numeric display box temp_min
 #define DISP1_S_X 181
 #define DISP1_S_Y 5
 #define DISP1_S_W 53
 #define DISP1_S_H 45
 
-// Numeric display box S2 size and location
+// Numeric display box temp_max
 #define DISP2_S_X 181
 #define DISP2_S_Y 55
 #define DISP2_S_W 53
 #define DISP2_S_H 45
 
-// Numeric display box S3 size and location
+// Numeric display box interval
 #define DISP3_S_X 181
 #define DISP3_S_Y 105
 #define DISP3_S_W 53
@@ -97,7 +101,7 @@
 // ----- SETUP DISPLAY END ----- //
 
 // ----- SCHEDULE DISPLAY ----- //
-// Keypad1 start position, key sizes and spacing
+// Keypad timers start
 #define KEY1_P_X 100 // Centre of key
 #define KEY1_P_Y 75
 #define KEY1_P_W 30 // Width and height
@@ -105,7 +109,7 @@
 #define KEY1_P_SPACING_X 3 // X and Y gap
 #define KEY1_P_SPACING_Y 45
 
-// Keypad2 start position, key sizes and spacing
+// Keypad temperatures
 #define KEY2_P_X 188 // Centre of key
 #define KEY2_P_Y 75
 #define KEY2_P_W 30 // Width and height
@@ -120,19 +124,15 @@
 #define DISP_P_H 20
 // ----- SCHEDULE DISPLAY END ----- //
 
-#define TFT_ORNGE 0xFB21
-#define TFT_DRKGREEN 0x0547
+#define TFT_DARKERGREEN 0x0547
 
-// We have a status line for messages
+// Status line for messages
 #define STATUS_X 120 // Centred on this
 #define STATUS_Y 307
 
-#define NTP_OFFSET   0 //60 * 60      // In seconds
-#define NTP_INTERVAL 60 * 60 * 1000    // In miliseconds
-#define NTP_ADDRESS  "de.pool.ntp.org"  // change this to whatever pool is closest (see ntp.org)
-
+// Button and clock colors
 #define BUTTON_LABEL 0x7BEF
-#define BUTTON_PLUS 0xF442
+#define BUTTON_PLUS 0xFB21
 #define BUTTON_MINUS 0x353E
 #define EXIT_MENU TFT_DARKGREEN //0x07E0
 #define COLOR_CLOCK 0x3ED7
@@ -171,41 +171,24 @@ int textLineY = 92;
 int textLineX = 135;
 
 // new
-int pressed = 0;
 bool display_changed = true;
 bool setup_screen = false;
 bool program_screen = false;
 bool statusCleared = true;
-/*
-int hourP1_from = 21;
-int minuteP1_from = 0;
-int hourP2_from = 6;
-int minuteP2_from = 30;
-int hourP3_from = 9;
-int minuteP3_from = 30;
-int hourP1_to = 6;
-int minuteP1_to = 30;
-int hourP2_to = 9;
-int minuteP2_to = 30;
-int hourP3_to = 21;
-int minuteP3_to = 0;
-
-String hourP1d_from, hourP2d_from, hourP3d_from, hourP1d_to, hourP2d_to, hourP3d_to;
-String minuteP1d_from, minuteP2d_from, minuteP3d_from, minuteP1d_to, minuteP2d_to, minuteP3d_to;
-*/
-time_t local, utc;
+int pressed = 0;
 int tempP1 = 18;
 int tempP2 = 19;
 int tempP3 = 20;
-int hourP1 = 14;
-int minuteP1 = 45;
-int hourP2 = 19;
-int minuteP2 = 0;
-int hourP3 = 19;
-int minuteP3 = 5;
+int hourP1 = 9;
+int minuteP1 = 0;
+int hourP2 = 9;
+int minuteP2 = 10;
+int hourP3 = 9;
+int minuteP3 = 20;
 uint8_t timerP1 = 0;
 uint8_t timerP2 = 1;
 uint8_t timerP3 = 2;
+time_t local, utc;
 
 // Create 16 keys for the setup keypad
 char keyLabelSetup[16][5] = {"Heat", "min", "max", "int", "On", "+", "+", "+", "Off", "-", "-", "-", "Auto", "RST", "Save", "Exit"};
@@ -233,7 +216,6 @@ uint16_t keyColorSchedule[7] = {
 
 // Invoke the TFT_eSPI button class and create all the button objects
 TFT_eSPI_Button key[16];
-// from thermostat.ino
 
 // Set up the NTP UDP client
 String date, timeNow, timeOld;
@@ -242,12 +224,13 @@ const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug
 const char * ampm[] = {"AM", "PM"} ;
 int minuteNextAlarm, hourNextAlarm, minuteNow, hourNow, minuteOld, hourOld, clockX, clockY, clockRadius, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6, x4_old, y4_old, x5_old, y5_old;
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
+
+// from thermostat.ino
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
 ESP8266WebServer server(80);
-
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom TFT library
 
@@ -310,7 +293,7 @@ void autoSwitchRelais() {
   }
 }
 
-//// settings read / write / clear SPIFFS
+//// SPIFFS settings read / write / clear
 void clearSpiffs() {
   Serial.println("= clearSpiffs");
   Serial.println("Please wait for SPIFFS to be formatted");
@@ -415,29 +398,6 @@ String serializeJsonDynamic() {
   return outputJson;
 }
 
-void updateSettings() {
-  Serial.println("\n= updateSettings");
-
-  if (server.args() < 1 || server.args() > 10 || !server.arg("SHA1") || !server.arg("loghost")) {
-    server.send(200, "text/html", "400: Invalid Request\n");
-    return;
-  }
-  SHA1 = server.arg("SHA1");
-  loghost = server.arg("loghost");
-  httpsPort = server.arg("httpsPort").toInt();
-  interval = server.arg("interval").toInt();
-  temp_min = server.arg("temp_min").toInt();
-  temp_max = server.arg("temp_max").toInt();
-  temp_dev = server.arg("temp_dev").toFloat();
-  heater = server.arg("heater").toInt();
-  manual = server.arg("manual").toInt();
-  debug = server.arg("debug").toInt();
-
-  writeSettingsFile();
-  changeTimers();
-  server.send(200, "text/html", webString);
-}
-
 void readSettingsFile() {
   Serial.println("= readSettingsFile");
 
@@ -496,6 +456,28 @@ void writeSettingsFile() {
     emptyFile = false; // mark file as not empty
   }
   f.close();
+}
+
+void updateSettings() {
+  Serial.println("\n= updateSettings");
+
+  if (server.args() < 1 || server.args() > 10 || !server.arg("SHA1") || !server.arg("loghost")) {
+    server.send(200, "text/html", "400: Invalid Request\n");
+    return;
+  }
+  SHA1 = server.arg("SHA1");
+  loghost = server.arg("loghost");
+  httpsPort = server.arg("httpsPort").toInt();
+  interval = server.arg("interval").toInt();
+  temp_min = server.arg("temp_min").toInt();
+  temp_max = server.arg("temp_max").toInt();
+  temp_dev = server.arg("temp_dev").toFloat();
+  heater = server.arg("heater").toInt();
+  manual = server.arg("manual").toInt();
+  debug = server.arg("debug").toInt();
+
+  writeSettingsFile();
+  server.send(200, "text/html", webString);
 }
 
 int readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
@@ -712,6 +694,7 @@ void printProgress (unsigned long percentage) {
   fflush (stdout);
 }
 
+// URL-encode JSON
 String urlEncode(String str)
 {
   String encodedString="";
@@ -781,7 +764,7 @@ String formatBytes(size_t bytes) {
   }
 }
 
-//// WiFi config mode
+//// WiFi config mode info
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println(F("Opening configuration portal"));
   tft.fillScreen(TFT_BLACK); // Black screen fill
@@ -804,6 +787,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   tft.drawString("pass4esp", 25, 210);
 }
 
+// print / clear display status message
 void statusPrint(const char *msg) {
   // Print something in the mini status bar
   tft.setTextPadding(240);
@@ -824,6 +808,7 @@ void statusClear() {
   }
 }
 
+// update the 3 display screens
 void updateDisplayN() {
   // Update the normal display fields
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
@@ -836,7 +821,7 @@ void updateDisplayN() {
   if (temp_c <= temp_min) 
     tft.setTextColor(TFT_BLUE);
   if (temp_c >= temp_max) 
-    tft.setTextColor(TFT_ORNGE);
+    tft.setTextColor(0xFB21);
   if (temp_c > temp_min && temp_c < temp_max) 
     tft.setTextColor(TFT_YELLOW);
   tft.drawString(String(temp_t), DISP1_N_X + 4, DISP1_N_Y + 9);
@@ -909,6 +894,7 @@ void updateDisplayP() {
   tft.drawString("C", 214, DISP_P_Y + 140);
 }
 
+// get time from NTP server and change according to local timezone
 void getTime() {
   prevGetTime = millis();
   Serial.print(F("\n= getTime: "));
@@ -946,6 +932,7 @@ void getTime() {
   Serial.println(epochTime + " => " + String(date) + " - " + String(timeNow));
 }
 
+// print next alarm time to serial
 void printNextAlarmTime() {
   TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
   TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
@@ -974,12 +961,12 @@ void printNextAlarmTime() {
   Serial.println(timeNextAlarm);
 }
 
-void changeTimers() {
-  if (manual) {
-    Alarm.free(timerP1);
-    Alarm.free(timerP2);
-    Alarm.free(timerP3);
-  } else {
+// update / clear the timers
+void changeTimers(bool resetTimers = false) {
+  Alarm.free(timerP1);
+  Alarm.free(timerP2);
+  Alarm.free(timerP3);
+  if (! resetTimers && ! manual) {
     Alarm.alarmRepeat(hourP1, minuteP1, 0, triggerTimerP1);
     Alarm.alarmRepeat(hourP2, minuteP2, 0, triggerTimerP2);
     Alarm.alarmRepeat(hourP3, minuteP3, 0, triggerTimerP3);
@@ -987,12 +974,13 @@ void changeTimers() {
   if (! program_screen && ! setup_screen)
     updateDisplayN();
   if (debug) {
-    Serial.println(F("\n= Timers changed, active alarms: "));
-    Serial.print(Alarm.count());
+    Serial.print(F("= Timers changed, active alarms: "));
+    Serial.println(Alarm.count());
     printNextAlarmTime();
   }
 }
 
+// add leading 0s to times
 String printDigits(int digit) {
   String digitS;
   if (digit < 10) {
@@ -1003,6 +991,7 @@ String printDigits(int digit) {
   return digitS;
 }
 
+// draw clock face and hands
 void drawClockFace(int clockX,int clockY,int clockRadius) {
   tft.drawCircle(clockX,clockY,clockRadius + 1,COLOR_CLOCK); // clock face
   for( int z=0; z < 360;z= z + 30 ){ // hour ticks
@@ -1049,12 +1038,13 @@ void drawClockTime(int clockX,int clockY,int clockRadius) {
   y5_old = y5;
 }
 
+// execute / trigger timers actions
 void triggerTimerP1() {
   temp_min = tempP1 -1;
   temp_max = tempP1 +1;
   autoSwitchRelais();
   if (debug)
-    Serial.print(F("getTriggeredAlarmId= "));
+    Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
@@ -1063,7 +1053,7 @@ void triggerTimerP2() {
   temp_max = tempP2 +1;
   autoSwitchRelais();
   if (debug)
-    Serial.print(F("getTriggeredAlarmId= "));
+    Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
@@ -1072,7 +1062,7 @@ void triggerTimerP3() {
   temp_max = tempP3 +1;
   autoSwitchRelais();
   if (debug)
-    Serial.print(F("getTriggeredAlarmId= "));
+    Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
@@ -1190,9 +1180,9 @@ void setup() {
     readSettingsFile(); // if failed, read settings from SPIFFS
   getInetIP();
   getTemperature();
+  changeTimers();
   autoSwitchRelais();
   getTime();
-  changeTimers();
   debugVars();
 
   // local webserver client handlers
@@ -1201,6 +1191,7 @@ void setup() {
   server.on("/update", []() {
     updateSettings();
     getTemperature();
+    changeTimers();
     autoSwitchRelais();
     if (debug)
       debugVars();
@@ -1247,6 +1238,7 @@ void loop(void) {
     prevTime = presTime; // save the last time
     getInetIP();
     getTime();
+    changeTimers();
     getTemperature();
     autoSwitchRelais();
     if (debug)
@@ -1340,8 +1332,6 @@ void loop(void) {
 
     getTemperature();
     getTime();
-    updateDisplayN();
-    drawClockFace(50, 220, 35);
 
     tft.setTextSize(1);
     tft.setFreeFont(Small_FONT);
@@ -1364,7 +1354,6 @@ void loop(void) {
     int wP3 = tft.drawString(String(tempP3), 195, textLineY + 150);
     tft.drawCircle(221, textLineY + 153, 2, TFT_CYAN);
     tft.drawString("C", 224, textLineY + 150);
-
     state = manual ? "manual" : "timer";
     wRelais = tft.drawString("Heating: ", 5, textLineY);
     if (state == "timer") {
@@ -1395,6 +1384,9 @@ void loop(void) {
       tft.setTextColor(TFT_RED);
       tft.drawString(String(relaisState), wRelais + wState + wComma + 10, textLineY - 4);
     }
+
+    updateDisplayN();
+    drawClockFace(50, 220, 35);
 
     // Draw keypad
     for (uint8_t row = 0; row < 1; row++) {
@@ -1572,7 +1564,6 @@ void loop(void) {
           program_screen = false;
           display_changed = true;
           changeTimers();
-          printNextAlarmTime();
           statusPrint("Exit Schedule screen");
         }
 
@@ -1617,7 +1608,7 @@ void loop(void) {
         }
         if (b == 8) {
           manual = true;
-          changeTimers();
+          changeTimers(true);
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Mode: manual, timers deleted");
@@ -1676,7 +1667,7 @@ void loop(void) {
           temp_min = 24;
           temp_max = 26;
           interval = 300000;
-          //changeTimers();
+          changeTimers();
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Values reset");
