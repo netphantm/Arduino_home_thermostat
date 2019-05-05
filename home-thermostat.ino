@@ -1,25 +1,22 @@
 //------------------------------------------------------------------------------------------
-// TODO: save relais state in manual mode
+// TODO - fix bug: logToWebserver exception: std::bad_alloc
 //------------------------------------------------------------------------------------------
 #include "FS.h"
 #include <Time.h>
 #include <Timezone.h>
 #include <TimeLib.h>
 #include <TimeAlarms.h>
-#include <ESP8266WiFi.h>
 #include <NTPClient.h>
-
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <WiFiManager.h>
 #include <ESP8266HTTPClient.h>
-#include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "SSD1306Wire.h"
 #include <ArduinoJson.h>
-#include "Free_Fonts.h" // Include the header file attached to this sketch
+#include "Free_Fonts.h"
 
 //// define variables / hardware
 #define ONE_WIRE_BUS D3
@@ -29,7 +26,7 @@
 
 // This is the file name used to store the calibration data
 // You can change this to create new calibration files.
-#define CALIBRATION_FILE "/TouchCalData2" // SPIFFS file name must start with "/".
+#define CALIBRATION_FILE "/TouchCalData" // SPIFFS file name must start with "/".
 
 // Set REPEAT_CAL to true to run calibration again
 // Repeat calibration if you change the screen rotation.
@@ -140,25 +137,22 @@ const static String sFile = "/settings.txt";  // SPIFFS file name must start wit
 const static String configHost = "temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
 unsigned long uptime = (millis() / 1000 );
 unsigned long status_timer = millis();
-unsigned long prevGetTime = millis();
-unsigned long prevTime = 0;
-unsigned long prevTimeIP = 0;
 unsigned long setupStarted = millis();
 unsigned long scheduleStarted = millis();
+unsigned long prevTime = 0;
+unsigned long clockTime = 0;
 bool emptyFile = false;
 bool heater = true;
 bool manual = false;
 bool debug = true;
 char lanIP[16];
-String inetIP, str_c, mode, state, WiFi_Name, webString, relaisState, SHA1, loghost, epochTime;
+String webString, relaisState, SHA1, loghost, epochTime;
 String hostname = "Donbot";
 uint8_t sha1[20];
-float temp_c = 25;
+float temp_c;
 float temp_dev;
-char temp_t[8];
-char temp_tOld[8];
-uint16_t color;
-int wRelais, wState, wComma, cursorX, cursorY, setTempOld;
+char temp_short[8];
+int wRelais, wState, wComma;
 int httpsPort = 443;
 int interval = 300000;
 int temp_min = 24;
@@ -182,14 +176,11 @@ int hourP1 = 9;
 int minuteP1 = 0;
 int hourP2 = 21;
 int minuteP2 = 30;
-uint8_t timerP0 = 0;
-uint8_t timerP1 = 1;
-uint8_t timerP2 = 2;
 time_t local, utc;
 char exitButton [] = "Exit";
 
 // Create 16 keys for the setup keypad
-char keyLabelSetup[16][5] = {"Heat", "min", "max", "int", "Auto", "+", "+", "+", "Manl", "-", "-", "-", "Auto", "RST", "Save", "Exit"};
+char keyLabelSetup[16][5] = {"Heat", "min", "max", "int", "Auto", "+", "+", "+", "Man", "-", "-", "-", "Prog", "RST", "Save", "Exit"};
 uint16_t keyColorSetup[16] = {
                         BUTTON_LABEL, BUTTON_LABEL, BUTTON_LABEL, BUTTON_LABEL,
                         BUTTON_PLUS, BUTTON_PLUS, BUTTON_PLUS, BUTTON_PLUS,
@@ -235,12 +226,13 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom TFT library
 //// read temperature from sensor / switch relay on or off
 void getTemperature() {
   Serial.print("= getTemperature: ");
-  String str_last = str_c;
+  float last_temp_c = temp_c;
   uptime = (millis() / 1000 ); // Refresh uptime
   DS18B20.requestTemperatures();  // initialize temperature sensor
-  Alarm.delay(10);
   temp_c = float(DS18B20.getTempCByIndex(0)); // read sensor
-  Alarm.delay(10);
+  yield();
+  if (temp_c < -120)
+    temp_c = last_temp_c;
   temp_c = temp_c + temp_dev; // calibrating sensor
   Serial.println(temp_c);
 }
@@ -490,29 +482,23 @@ void writeSettingsWeb() {
         String payload = http.getString();
         //Serial.println(payload);
       }
+      status_timer = millis();
+      statusPrint("Saved settings to webserver");
     } else {
       Serial.println("[HTTPS] failed, error: " + String(httpCode) + " = " +  http.errorToString(httpCode).c_str());
+      status_timer = millis();
+      statusPrint("ERROR saving to webserver");
     }
     http.end();
   } else {
     Serial.printf("[HTTPS] Unable to connect\n");
+    status_timer = millis();
+    statusPrint("ERROR saving to webserver");
   }
   Alarm.delay(10);
   client->flush();
-  client->stop();
   if (debug)
     debugVars();
-}
-
-//// local webserver handlers / send data to logserver
-void handleRoot() {
-  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>Nothing to see here! Move along...</h1></div></body></html>\n");
-  Alarm.delay(10);
-}
-
-void handleNotFound(){
-  server.send(404, "text/plain", "404: File not found!\n");
-  Alarm.delay(10);
 }
 
 void logToWebserver() {
@@ -552,17 +538,22 @@ void logToWebserver() {
           Serial.print("Timestamp on log update: ");
           Serial.println(epochTime);
       }
+      status_timer = millis();
+      statusPrint("Logged data to webserver");
     } else {
       Serial.print(F("HTTP GET ERROR: failed logging to webserver! Error: "));
       Serial.println(https.errorToString(httpCode).c_str());
+      status_timer = millis();
+      statusPrint("ERROR logging to webserver");
     }
-    https.end();
   } else {
     Serial.println(F("HTTP ERROR: Unable to connect"));
+    status_timer = millis();
+    statusPrint("ERROR logging to webserver");
   }
   Alarm.delay(10);
+  https.end();
   client.flush();
-  client.stop();
 
   /*
   HTTPClient http;
@@ -601,13 +592,12 @@ void logToWebserver() {
     } else {
       Serial.println("[HTTPS] failed, error: " + String(httpCode) + " = " +  http.errorToString(httpCode).c_str());
     }
-    http.end();
   } else {
     Serial.printf("[HTTPS] Unable to connect\n");
   }
   Alarm.delay(10);
+  http.end();
   client->flush();
-  client->stop();
   */
 
 }
@@ -621,8 +611,6 @@ void debugVars() {
   Serial.println(hostname);
   Serial.print(F("- LAN IP: "));
   Serial.println(lanIP);
-  Serial.print(F("- Inet IP: "));
-  Serial.println(inetIP);
   Serial.print(F("- uptime: "));
   Serial.println(uptime);
   Serial.print(F("- Temperature: "));
@@ -708,35 +696,6 @@ String urlEncode(String str)
   return encodedString;
 }
 
-//// get internet IP (for display)
-void getInetIP() {
-  Serial.print(F("= getInetIP"));
-  unsigned long presTimeIP = millis();
-  unsigned long passedIP = presTimeIP - prevTimeIP;
-  if (presTimeIP < 60000 || passedIP > 3600000) { // update every hour, so we don't piss of the guys @ ipinfo.io
-    WiFiClient client;
-    HTTPClient http;
-    http.begin(client, "http://ipinfo.io/ip");
-    http.addHeader("Content-Type", "application/text");
-    int httpCode = http.GET();
-    if(httpCode > 0) {
-      inetIP = String(http.getString());
-      inetIP.trim();
-      Serial.print(F(": "));
-      Serial.print(inetIP);
-      prevTimeIP = presTimeIP; // save the last time Ip was updated
-    } else {
-      Serial.print(F("HTTPS GET ERROR: failed getting internet IP! Error: "));
-      Serial.println(http.errorToString(httpCode).c_str());
-      inetIP == "Error:" + httpCode;
-    }
-    http.end();
-    Alarm.delay(10);
-    client.flush();
-    client.stop();
-  }
-}
-
 //// convert sizes from bytes to KB and MB
 String formatBytes(size_t bytes) {
   if (bytes < 1024) {
@@ -796,7 +755,7 @@ void statusClear() {
 void updateDisplayN() {
   // Update the normal display fields
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
-  sprintf(temp_t, "%.1f", temp_c);
+  sprintf(temp_short, "%.1f", temp_c);
   setTemp = temp_min+(temp_max-temp_min)/2;
 
   // display temp_c
@@ -808,7 +767,7 @@ void updateDisplayN() {
   if (temp_c > temp_min && temp_c < temp_max) 
     tft.setTextColor(TFT_YELLOW);
   tft.fillRect(DISP1_N_X - 1, DISP1_N_Y + 7, 100, 42, TFT_BLACK);
-  tft.drawString(String(temp_t), DISP1_N_X + 4, DISP1_N_Y + 9);
+  tft.drawString(String(temp_short), DISP1_N_X + 4, DISP1_N_Y + 9);
 
   // display setTemp
   tft.setFreeFont(&FreeSans18pt7b);
@@ -818,20 +777,20 @@ void updateDisplayN() {
 
   tft.setTextSize(1);
   tft.setFreeFont(Small_FONT);
-  state = manual ? "manual" : "timer";
+  String state = manual ? "manual" : "timer";
   wRelais = tft.drawString("Heating: ", 5, textLineY);
   tft.setFreeFont(&FreeSans12pt7b);
   if (state == "timer") {
     tft.setTextColor(TFT_BLACK);
-    tft.drawString("manual", wRelais + 5, textLineY);
+    tft.drawString("MANUAL", wRelais + 5, textLineY);
     tft.setTextColor(TFT_GREEN);
     wState = tft.drawString("TIMER", wRelais + 5, textLineY);
     tft.setTextColor(TFT_CYAN);
     wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
   } else {
     tft.setTextColor(TFT_BLACK);
-    tft.drawString("timer", wRelais + 5, textLineY);
-    tft.setTextColor(TFT_RED);
+    tft.drawString("TIMER", wRelais + 5, textLineY);
+    tft.setTextColor(0xFB21);
     wState = tft.drawString("MANUAL", wRelais + 5, textLineY);
     tft.setTextColor(TFT_CYAN);
     wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
@@ -845,7 +804,7 @@ void updateDisplayN() {
   if (relaisState == "OFF") {
     tft.setTextColor(TFT_BLACK);
     tft.drawString(String("ON"), wRelais + wState + wComma + 5, textLineY);
-    tft.setTextColor(TFT_RED);
+    tft.setTextColor(0xFB21);
     tft.drawString(String(relaisState), wRelais + wState + wComma + 5, textLineY);
   }
 
@@ -930,16 +889,16 @@ void updateDisplayP() {
   tft.drawString(String(tempP2), 185, DISP_P_Y + 140);
   tft.drawCircle(211, DISP_P_Y + 143, 2, TFT_CYAN);
   tft.drawString("C", 214, DISP_P_Y + 140);
+
+  drawClockFace(50, 270, 35);
 }
 
 // get time from NTP server and change according to local timezone
 void getTime() {
-  prevGetTime = millis();
   Serial.print(F("= getTime: "));
   // update the NTP client and get the UNIX UTC timestamp 
   timeClient.update();
   unsigned long epochTime =  timeClient.getEpochTime();
-
   // convert received time stamp to time_t object
   utc = epochTime;
 
@@ -1001,9 +960,9 @@ void printNextAlarmTime() {
 
 // update / clear the timers
 void changeTimers(bool resetTimers = false) {
-  Alarm.free(timerP0);
-  Alarm.free(timerP1);
-  Alarm.free(timerP2);
+  Alarm.free(0);
+  Alarm.free(1);
+  Alarm.free(2);
   if (! resetTimers && ! manual) {
     Alarm.alarmRepeat(hourP0, minuteP0, 0, triggerTimerP1);
     Alarm.alarmRepeat(hourP1, minuteP1, 0, triggerTimerP2);
@@ -1110,11 +1069,22 @@ void triggerTimerP3() {
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
+//// local webserver handlers / send data to logserver
+void handleRoot() {
+  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>Nothing to see here! Move along...</h1></div></body></html>\n");
+  Alarm.delay(10);
+}
+
+void handleNotFound(){
+  server.send(404, "text/plain", "404: File not found!\n");
+  Alarm.delay(10);
+}
+
 void updateSettings() {
   Serial.println("\n= updateSettings");
 
   if (server.args() < 1 || server.args() > 19 || !server.arg("SHA1") || !server.arg("loghost")) {
-    server.send(200, "text/html", "400: Invalid Request\n");
+    server.send(400, "text/html", "400: Invalid Request\n");
     return;
   }
   SHA1 = server.arg("SHA1");
@@ -1136,17 +1106,11 @@ void updateSettings() {
   tempP2 = server.arg("tempP2").toInt();
   hourP2 = server.arg("hourP2").toInt();
   minuteP2 = server.arg("minuteP2").toInt();
-  Alarm.delay(10);
   writeSettingsFile();
-  Alarm.delay(10);
   server.send(200, "text/html", webString);
-
-  getTemperature();
-  changeTimers();
-  autoSwitchRelais();
-  updateDisplayN();
-  if (debug)
-    debugVars();
+  status_timer = millis();
+  statusPrint("Settings updated");
+  Alarm.delay(10);
 }
 
 //------------------------------------------------------------------------------------------
@@ -1257,38 +1221,51 @@ void setup() {
     readSettingsFile(); // if failed, read settings from SPIFFS
   if (interval < 10000) // set a failsafe interval
     interval = 60000; // 20 secs
-  getInetIP();
   getTemperature();
   changeTimers();
-  autoSwitchRelais();
-  getTime();
-  debugVars();
 
   // local webserver client handlers
   server.onNotFound(handleNotFound);
   server.on("/", handleRoot);
   server.on("/clear", clearSpiffs);
-  server.on("/update", updateSettings);
+  server.on("/update", []() {
+    updateSettings();
+    getTemperature();
+    changeTimers();
+    autoSwitchRelais();
+    if (! setup_screen && ! program_screen)
+      updateDisplayN();
+    if (debug)
+    debugVars();
+  });
   server.begin();
+  MDNS.addService("http", "tcp", 80);
   Serial.println("HTTP server started");
+  debugVars();
 } // setup() END
 
 //------------------------------------------------------------------------------------------
 
 void loop(void) {
+  server.handleClient();
+  MDNS.update();
+  Alarm.delay(10);
   int pressed = 0;
   unsigned long presTime = millis();
   unsigned long passed = presTime - prevTime;
 
+  if (presTime - clockTime > 60000) {
+    getTime();
+    clockTime = millis();
+  }
+
   if (passed > interval) {
     Serial.println(F("\nInterval passed"));
-    logToWebserver();
-    prevTime = presTime; // save the last time
-    getInetIP();
-    getTime();
     getTemperature();
     changeTimers();
     autoSwitchRelais();
+    logToWebserver();
+    prevTime = presTime; // save the last time
     if (! setup_screen && ! program_screen)
       updateDisplayN();
     if (debug)
@@ -1320,8 +1297,8 @@ void loop(void) {
   
   // ------------ DISPLAY ------------ //
 
+  // ----- SCHEDULE DISPLAY INIT ----- //
   if (display_changed && program_screen) {
-    // ----- SCHEDULE DISPLAY INIT ----- //
     tft.fillScreen(TFT_BLACK);
 
     // draw grid
@@ -1329,7 +1306,6 @@ void loop(void) {
     //for (int32_t y=20; y<320; y=y+20) tft.drawLine(0, y, 240, y, TFT_NAVY);
 
     updateDisplayP();
-    drawClockFace(50, 270, 35);
 
     // Draw schedule keypads
     for (uint8_t row = 0; row < 3; row++) {
@@ -1381,7 +1357,7 @@ void loop(void) {
       for (uint8_t col = 0; col < 4; col++) {
         uint8_t b = col + row * 4;
 
-        if (b > 11) tft.setFreeFont(Italic_FONT);
+        if (b < 4 || b > 11) tft.setFreeFont(Italic_FONT);
         else tft.setFreeFont(Bold_FONT);
 
         key[b].initButton(&tft, KEY_S_X + col * (KEY_S_W + KEY_S_SPACING_X),
@@ -1394,8 +1370,8 @@ void loop(void) {
     display_changed = false;
   } // ----- SETUP DISPLAY INIT END ----- //
 
+  // ----- NORMAL DISPLAY INIT ----- //
   if (display_changed && ! setup_screen && ! program_screen) {
-    // ----- NORMAL DISPLAY INIT ----- //
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
 
@@ -1419,13 +1395,12 @@ void loop(void) {
     display_changed = false;
   } // ----- NORMAL DISPLAY INIT END ----- //
 
-  if (! setup_screen)
-    drawClockTime(50, 220, 35);
-
   // --- key was pressed --- //
 
+  // ----- SCHEDULE DISPLAY ----- //
   if (program_screen) {
-    // ----- SCHEDULE DISPLAY ----- //
+    drawClockTime(50, 270, 35);
+
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     pressed = tft.getTouch(&t_x, &t_y);
 
@@ -1574,6 +1549,7 @@ void loop(void) {
           display_changed = true;
           changeTimers();
           statusPrint("Exit Schedule screen");
+          Alarm.delay(200);
         }
 
         Alarm.delay(10); // UI debouncing
@@ -1582,8 +1558,8 @@ void loop(void) {
     pressed = 0;
   } // ----- SCHEDULE DISPLAY END ----- //
 
+  // ----- SETUP DISPLAY ----- //
   if (setup_screen) {
-    // ----- SETUP DISPLAY ----- //
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     pressed = tft.getTouch(&t_x, &t_y);
 
@@ -1598,7 +1574,8 @@ void loop(void) {
 
     for (uint8_t b = 4; b < 16; b++) {
       if (b > 11) tft.setFreeFont(Italic_FONT);
-        else tft.setFreeFont(Bold_FONT);
+      else tft.setFreeFont(Bold_FONT);
+
       if (key[b].justReleased())
         key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
@@ -1612,6 +1589,7 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Mode: auto, timers created");
+          Alarm.delay(200);
         }
         if (b == 8) {
           manual = true;
@@ -1619,6 +1597,7 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Mode: manual, timers deleted");
+          Alarm.delay(200);
         }
 
         // 5/9 - second col
@@ -1627,12 +1606,14 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased temp min");
+          Alarm.delay(200);
         }
         if (b == 9 && temp_min > 17) {
           temp_min--;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased temp min");
+          Alarm.delay(200);
         }
 
         // 6/10 - third col
@@ -1641,12 +1622,14 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased temp max");
+          Alarm.delay(200);
         }
         if (b == 10 && temp_max > 19) {
           temp_max--;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased temp max");
+          Alarm.delay(200);
         }
 
         // 7/11 - fourth col
@@ -1655,22 +1638,27 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased interval");
+          Alarm.delay(200);
         }
         if (b == 11 && interval >= 120000) {
           interval = interval - 60000;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased interval");
+          Alarm.delay(200);
         }
 
         // last row
         if (b == 12) {
           // Auto
-          manual = false;
-          changeTimers();
+          Serial.println(F("Enter Schedule screen"));
+          setup_screen = false;
+          program_screen = true;
+          display_changed = true;
+          scheduleStarted = millis();
           status_timer = millis();
-          setupStarted = millis();
-          statusPrint("Mode: auto, timers created");
+          statusPrint("Enter Schedule screen");
+          Alarm.delay(200);
         }
         if (b == 13) {
           // Reset settings
@@ -1681,15 +1669,14 @@ void loop(void) {
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Values reset");
+          Alarm.delay(200);
         }
         if (b == 14) {
           // Save settings
           writeSettingsFile();
           writeSettingsWeb();
-          //changeTimers();
-          status_timer = millis();
           setupStarted = millis();
-          statusPrint("Settings saved");
+          Alarm.delay(200);
         }
 
         updateDisplayS();
@@ -1701,6 +1688,7 @@ void loop(void) {
           program_screen = false;
           display_changed = true;
           statusPrint("Exit Setup screen");
+          Alarm.delay(200);
         }
 
         Alarm.delay(10); // UI debouncing
@@ -1709,8 +1697,10 @@ void loop(void) {
     pressed = 0;
   }  // ----- SETUP DISPLAY END ----- //
 
+  // ----- NORMAL DISPLAY ----- //
   if (! setup_screen && ! program_screen) {
-    // ----- NORMAL DISPLAY ----- //
+    drawClockTime(50, 220, 35);
+
     uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     pressed = tft.getTouch(&t_x, &t_y);
 
@@ -1739,7 +1729,8 @@ void loop(void) {
 
     for (uint8_t b = 0; b < 3; b++) {
       if (b == 2) tft.setFreeFont(Italic_FONT);
-        else tft.setFreeFont(Bold_FONT);
+      else tft.setFreeFont(Bold_FONT);
+
       if (key[b].justReleased())
         key[b].drawButton();     // draw normal
       if (key[b].justPressed()) {
@@ -1753,6 +1744,7 @@ void loop(void) {
             autoSwitchRelais();
             status_timer = millis();
             statusPrint("Temperature raised");
+            Alarm.delay(200);
         }
         if (b == 1 && temp_min > 17 && temp_max > 19) {
             temp_min--;
@@ -1760,6 +1752,7 @@ void loop(void) {
             autoSwitchRelais();
             status_timer = millis();
             statusPrint("Temperature lowered");
+            Alarm.delay(200);
         }
 
         updateDisplayN();
@@ -1771,6 +1764,7 @@ void loop(void) {
           display_changed = true;
           setupStarted = millis();
           statusPrint("Enter Setup screen");
+          Alarm.delay(200);
         }
 
         Alarm.delay(10); // UI debouncing
@@ -1778,6 +1772,4 @@ void loop(void) {
     }
     pressed = 0;
   }  // ----- NORMAL DISPLAY END ----- //
-
-  //server.handleClient();
 }
