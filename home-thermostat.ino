@@ -131,9 +131,47 @@
 #define EXIT_MENU TFT_DARKGREEN //0x07E0
 #define COLOR_CLOCK 0x3ED7
 
-// from thermostat.ino
-const size_t jsonCapacity = JSON_OBJECT_SIZE(19) + 512;
-const static String sFile = "/settings.txt";  // SPIFFS file name must start with "/".
+struct thermostatConfig {
+  char SHA1[64];
+  char loghost[32];
+  long interval;
+  bool heater;
+  bool manual;
+  bool debug;
+  float temp_dev;
+  int temp_min;
+  int temp_max;
+  int httpsPort;
+
+  void load(JsonObjectConst);
+  void save(JsonObject) const;
+};
+
+struct programsConfig {
+  int temp;
+  int hour;
+  int minute;
+
+  void load(JsonObjectConst);
+  void save(JsonObject) const;
+};
+
+struct Config {
+  thermostatConfig thermostat;
+
+  static const int maxprograms = 3;
+  programsConfig program[maxprograms];
+  int programs = 0;
+
+  void load(JsonObjectConst);
+  void save(JsonObject) const;
+};
+
+bool serializeConfig(const Config &config, Print &dst);
+bool deserializeConfig(String src, Config &config);
+
+const size_t jsonCapacity = JSON_OBJECT_SIZE(19) + 300;
+const char *sFile = "/settings.txt";  // SPIFFS file name must start with "/".
 const static String configHost = "192.168.178.25"; // chicken/egg situation, you have to get the initial config from somewhere
 const static String configPath = "/temp";
 const static String logpath = "/temp";
@@ -143,43 +181,27 @@ unsigned long setupStarted = millis();
 unsigned long scheduleStarted = millis();
 unsigned long prevTime = 0;
 unsigned long clockTime = 0;
+time_t local, utc;
 bool emptyFile = false;
-bool heater = true;
-bool manual = false;
-bool debug = true;
-char lanIP[16];
-String webString, relaisState, SHA1, epochTime, loghost;
-String hostname = "Donbot";
-uint8_t sha1[20];
-float temp_c;
-float temp_dev;
-char temp_short[8];
-int wRelais, wState, wComma;
-int httpsPort = 443;
-int interval = 300000;
-int temp_min = 24;
-int temp_max = 26;
-int setTemp = temp_min+(temp_max-temp_min)/2;
-int textLineY = 92;
-int textLineX = 135;
-
-// new
+bool success, loaded;
 bool display_changed = true;
 bool setup_screen = false;
 bool program_screen = false;
 bool statusCleared = true;
-int pressed = 0;
-int tempP0 = 18;
-int tempP1 = 19;
-int tempP2 = 20;
-int hourP0 = 7;
-int minuteP0 = 0;
-int hourP1 = 9;
-int minuteP1 = 0;
-int hourP2 = 21;
-int minuteP2 = 30;
-time_t local, utc;
+char buffer[3];
+char lanIP[16];
+char temp_short[8];
 char exitButton [] = "Exit";
+char relaisState[4];
+String webString, epochTime;
+String hostname = "Donbot";
+uint8_t sha1[20];
+float temp_c;
+int wRelais, wState, wComma;
+int setTemp; // config.thermostat.temp_min+(config.thermostat.temp_max-config.thermostat.temp_min)/2;
+int textLineY = 92;
+int textLineX = 135;
+int pressed = 0;
 
 // Create 16 keys for the setup keypad
 char keyLabelSetup[16][5] = {"Heat", "min", "max", "int", "Auto", "+", "+", "+", "Man", "-", "-", "-", "Prog", "RST", "Save", "Exit"};
@@ -214,6 +236,7 @@ const char * days[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "
 const char * months[] = {"Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sep", "Oct", "Nov", "Dec"} ;
 int minuteNextAlarm, hourNextAlarm, minuteNow, hourNow, minuteOld, hourOld, clockX, clockY, clockRadius, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6, x4_old, y4_old, x5_old, y5_old;
 
+Config config;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
@@ -225,9 +248,168 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom TFT library
 
 //------------------------------------------------------------------------------------------
 
+void thermostatConfig::save(JsonObject obj) const {
+  obj["SHA1"] = SHA1;
+  obj["loghost"] = loghost;
+  obj["interval"] = interval;
+  obj["heater"] = heater;
+  obj["manual"] = manual;
+  obj["debug"] = debug;
+  obj["temp_dev"] = temp_dev;
+  obj["temp_min"] = temp_min;
+  obj["temp_max"] = temp_max;
+  obj["httpsPort"] = httpsPort;
+}
+
+void programsConfig::save(JsonObject obj) const {
+  obj["temp"] = temp;
+  obj["hour"] = hour;
+  obj["minute"] = minute;
+}
+
+void thermostatConfig::load(JsonObjectConst obj) {
+  strlcpy(SHA1, obj["SHA1"], sizeof(SHA1));
+  strlcpy(loghost, obj["loghost"], sizeof(loghost));
+  interval = obj["interval"];
+  heater = obj["heater"];
+  manual = obj["manual"];
+  debug = obj["debug"];
+  temp_dev = obj["temp_dev"];
+  temp_min = obj["temp_min"];
+  temp_max = obj["temp_max"];
+  httpsPort = obj["httpsPort"];
+}
+
+void programsConfig::load(JsonObjectConst obj) {
+  temp = obj["temp"];
+  hour = obj["hour"];
+  minute = obj["minute"];
+}
+
+void Config::load(JsonObjectConst obj) {
+  // Read "thermostat" object
+  thermostat.load(obj["thermostat"]);
+
+  // Get a reference to the programs array
+  JsonArrayConst progs = obj["programs"];
+
+  // Extract each program
+  programs = 0;
+  for (JsonObjectConst prog : progs) {
+    // Load the program
+    program[programs].load(prog);
+
+    // Increment program count
+    programs++;
+
+    // Max reach?
+    if (programs >= maxprograms)
+      break;
+  }
+}
+
+void Config::save(JsonObject obj) const {
+  // Add "thermostat" object
+  thermostat.save(obj.createNestedObject("thermostat"));
+
+  // Add "programs" array
+  JsonArray progs = obj.createNestedArray("programs");
+
+  // Add each acces point in the array
+  for (int i = 0; i < programs; i++)
+    program[i].save(progs.createNestedObject());
+}
+
+bool serializeConfig(const Config &config, Print &dst) {
+  Serial.print(F("= serializeConfig: "));
+  DynamicJsonDocument doc(512);
+
+  // Create an object at the root
+  JsonObject root = doc.to<JsonObject>();
+
+  // Fill the object
+  config.save(root);
+
+  if (config.thermostat.debug) {
+    Serial.println("jsonPretty=");
+    serializeJsonPretty(doc, Serial);
+    Serial.println();
+  }
+  // Serialize JSON to file
+  return serializeJson(doc, dst) > 0;
+}
+
+bool deserializeConfig(String src, Config &config) {
+  Serial.print(F("= deserializeConfig: "));
+  DynamicJsonDocument doc(1024);
+
+  // Parse the JSON object in the file
+  DeserializationError err = deserializeJson(doc, src);
+  if (err) {
+    Serial.print(F("deserializeJson() failed with code "));
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  config.load(doc.as<JsonObject>());
+  Serial.println("OK");
+  return true;
+}
+
+// Loads the configuration from a file on SPIFFS
+bool loadFile() {
+  Serial.print(F("= loadFile: "));
+  File file = SPIFFS.open(sFile, "r");
+  if (!file) {
+    Serial.println(F("Failed to open config file"));
+    return false;
+  }
+
+  // Parse the JSON object in the file
+  success = deserializeConfig((String)file.read(), config);
+  if (!success) {
+    Serial.println(F("Failed to deserialize configuration"));
+    return false;
+  }
+
+  return true;
+}
+
+// Saves the configuration to a file on SPIFFS
+void saveFile() {
+  Serial.println(F("= saveFile"));
+  File file = SPIFFS.open(sFile, "w");
+  if (!file) {
+    Serial.println(F("Failed to create config file"));
+    return;
+  }
+
+  // Serialize JSON to file
+  success = serializeConfig(config, file);
+  if (!success) {
+    Serial.println(F("Failed to serialize configuration"));
+  }
+}
+
+// Prints the content of a file to the Serial
+void printFile() {
+  // Open file for reading
+  File file = SPIFFS.open(sFile, "r");
+  if (!file) {
+    Serial.println(F("Failed to open config file"));
+    return;
+  }
+
+  // Extract each by one by one
+  while (file.available()) {
+    Serial.print((char)file.read());
+  }
+  Serial.println();
+}
+
 //// read temperature from sensor / switch relay on or off
 void getTemperature() {
-  Serial.print("= getTemperature: ");
+  Serial.print(F("= getTemperature: "));
   float last_temp_c = temp_c;
   uptime = (millis() / 1000 ); // Refresh uptime
   DS18B20.requestTemperatures();  // initialize temperature sensor
@@ -235,41 +417,40 @@ void getTemperature() {
   yield();
   if (temp_c < -120)
     temp_c = last_temp_c;
-  temp_c = temp_c + temp_dev; // calibrating sensor
+  temp_c = temp_c + config.thermostat.temp_dev; // calibrating sensor
   Serial.println(temp_c);
 }
 
-void switchRelais(String sw = "TOGGLE") { // if no parameter given, assume TOGGLE
-  Serial.print("= switchRelais: ");
+void switchRelais(const char* sw = "TOGGLE") { // if no parameter given, assume TOGGLE
+  Serial.print(F("= switchRelais: "));
   if (sw == "TOGGLE") {
     if (digitalRead(RELAISPIN) == 1) {
       digitalWrite(RELAISPIN, 0);
-      relaisState = "OFF";
+      strcpy(relaisState, "OFF");
     } else {
       digitalWrite(RELAISPIN, 1);
-      relaisState = "ON";
+      strcpy(relaisState, "ON");
     }
     Serial.println(relaisState);
     return;
   } else {
     if (sw == "ON") {
     digitalWrite(RELAISPIN, 0);
-    relaisState = "ON";
+    strcpy(relaisState, "ON");
     } else if (sw == "OFF") {
       digitalWrite(RELAISPIN, 1);
-      relaisState = "OFF";
+      strcpy(relaisState, "OFF");
     }
     Serial.println(relaisState);
   }
 }
 
 void autoSwitchRelais() {
-  Serial.print("= autoSwitchRelais: ");
-  if (temp_c <= temp_min) {
+  Serial.print(F("= autoSwitchRelais: "));
+  if (temp_c <= config.thermostat.temp_min) {
     switchRelais("ON");
-  } else if (temp_c >= temp_max) {
+  } else if (temp_c >= config.thermostat.temp_max) {
     switchRelais("OFF");
-    Alarm.delay(10);
   }
   if (! setup_screen && ! program_screen)
     updateDisplayN();
@@ -277,176 +458,50 @@ void autoSwitchRelais() {
 
 //// SPIFFS settings read / write / clear
 void clearSpiffs() {
-  Serial.println("= clearSpiffs");
-  Serial.println("Please wait for SPIFFS to be formatted");
+  Serial.println(F("= clearSpiffs"));
+  Serial.println(F("Please wait for SPIFFS to be formatted"));
   SPIFFS.format();
   yield();
-  Serial.println("SPIFFS formatted");
+  Serial.println(F("SPIFFS formatted"));
   emptyFile = true; // mark file as empty
   server.send(200, "text/plain", "200: OK, SPIFFS formatted, settings cleared\n");
 }
 
-void deserializeJsonDynamic(String json) {
-  Serial.print(F("= deserializeJsonDynamic: "));
-  StaticJsonBuffer<1024> jsonBuffer;
-  //DynamicJsonBuffer jsonBuffer(jsonCapacity);
-  JsonObject& root = jsonBuffer.parseObject(json);
-  if (!root.success()) {
-    Serial.println(F("Error deserializing json!"));
-    emptyFile = true;
-    return;
-  } else {
-    SHA1 = root["SHA1"].as<String>();
-    loghost = root["loghost"].as<String>(), sizeof(loghost);
-    httpsPort = root["httpsPort"].as<int>(), sizeof(httpsPort);
-    interval = root["interval"].as<long>(), sizeof(interval);
-    temp_min = root["temp_min"].as<int>(), sizeof(temp_min);
-    temp_max = root["temp_max"].as<int>(), sizeof(temp_max);
-    temp_dev = root["temp_dev"].as<float>(), sizeof(temp_dev);
-    heater = root["heater"].as<bool>(), sizeof(heater);
-    manual = root["manual"].as<bool>(), sizeof(manual);
-    debug = root["debug"].as<bool>(), sizeof(debug);
-    tempP0 = root["tempP0"].as<int>(), sizeof(tempP0);
-    hourP0 = root["hourP0"].as<int>(), sizeof(hourP0);
-    minuteP0 = root["minuteP0"].as<int>(), sizeof(minuteP0);
-    tempP1 = root["tempP1"].as<int>(), sizeof(tempP1);
-    hourP1 = root["hourP1"].as<int>(), sizeof(hourP1);
-    minuteP1 = root["minuteP1"].as<int>(), sizeof(minuteP1);
-    tempP2 = root["tempP2"].as<int>(), sizeof(tempP2);
-    hourP2 = root["hourP2"].as<int>(), sizeof(hourP2);
-    minuteP2 = root["minuteP2"].as<int>(), sizeof(minuteP2);
-    Serial.println(F("OK."));
-    emptyFile = false; // mark file as not empty
-  }
-}
-
-String serializeJsonDynamic() {
-  Serial.print(F("= serializeJsonDynamic: "));
-  StaticJsonBuffer<1024> jsonBuffer;
-  //DynamicJsonBuffer jsonBuffer(jsonCapacity);
-  JsonObject& root = jsonBuffer.createObject();
-  String outputJson = "";
-  root["SHA1"] = SHA1;
-  root["loghost"] = loghost;
-  root["httpsPort"] = httpsPort;
-  root["interval"] = interval;
-  root["temp_min"] = temp_min;
-  root["temp_max"] = temp_max;
-  root["temp_dev"] = temp_dev;
-  root["heater"] = heater;
-  root["manual"] = manual;
-  root["debug"] = debug;
-  root["tempP0"] = tempP0;
-  root["hourP0"] = hourP0;
-  root["minuteP0"] = minuteP0;
-  root["tempP1"] = tempP1;
-  root["hourP1"] = hourP1;
-  root["minuteP1"] = minuteP1;
-  root["tempP2"] = tempP2;
-  root["hourP2"] = hourP2;
-  root["minuteP2"] = minuteP2;
-  root.printTo(outputJson);
-  Serial.println(F("OK."));
-  return outputJson;
-}
-
-void readSettingsFile() {
-  Serial.println("= readSettingsFile");
-
-  File f = SPIFFS.open(sFile, "r"); // open file for reading
-  if (!f) {
-    Serial.println(F("Settings file read open failed"));
-    emptyFile = true;
-    return;
-  }
-  while (f.available()) {
-    String fileJson = f.readStringUntil('\n');
-    deserializeJsonDynamic(fileJson);
-  }
-  f.close();
-}
-
-void writeSettingsFile() {
-  Serial.println("= writeSettingsFile: ");
-
-  File f = SPIFFS.open(sFile, "w"); // open file for writing
-  if (!f) {
-    Serial.println(F("Failed to create settings file"));
-    server.send(200, "text/html", "200: OK, File write open failed! settings not saved\n");
-    return;
-  }
-  if (f.print(serializeJsonDynamic()) == 0) {
-    Serial.println(F("Failed to write to file"));
-    webString = "Failed to write to file\n";
-  } else {
-    Serial.println("File write: OK");
-
-    /* prepare webpage for output
-    webString = "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n";
-    webString += "<head>\n";
-    webString += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n";
-    webString += "\tbody { \n\t\tpadding: 3rem; \n\t\tfont-size: 16px;\n\t}\n";
-    webString += "\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n";
-    webString += "</head>\n<body>\n";
-    webString += "Arduino response: Code 200: OK.<br>\n Got new settings.<br>\n";
-    webString += "Settings file updated.\n<br><br>\nBack to \n";
-    webString += "<form method='POST' action='https://";
-    webString += configHost;
-    webString += configPath;
-    webString += "/'>";
-    webString += "\n<button name='device' value='";
-    webString += hostname;
-    webString += "'>Graph</button>\n";
-    webString += "</form>\n<br>\n";
-    webString += "JSON root: \n<br>\n";
-    webString += "<div id='debug'></div>\n";
-    webString += "<script src='https://";
-    webString += configHost;
-    webString += configPath;
-    webString += "/prettyprint.js'></script>\n";
-    webString += "<script>\n\tvar root = ";
-    webString += outputJson;
-    webString += ";\n\tvar tbl = prettyPrint(root);\n";
-    webString += "\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n";
-    webString += "</body>\n";
-    */
-    emptyFile = false; // mark file as not empty
-  }
-  yield();
-  f.close();
-}
-
-int readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
-  Serial.println("= readSettingsWeb");
-  if (debug) {
+bool readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
+  Serial.println(F("= readSettingsWeb"));
+  if (config.thermostat.debug) {
     Serial.print(F("Getting settings from http://"));
     Serial.print(configHost);
     Serial.println(configPath);
   }
   WiFiClient client;
   HTTPClient http;
-  http.begin(client, "http://" + configHost + configPath + "/settings-" + hostname + ".json");
-  http.addHeader("Content-Type", "application/json");
-  int httpCode = http.GET();
-  if (httpCode > 0) {
-    Serial.printf("[HTTP] code: %d\n", httpCode);
-    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
-      Serial.print(F("Server response:"));
-      Serial.println(http.getString());
-      deserializeJsonDynamic(http.getString());
+  if (http.begin(client, "http://" + configHost + configPath + "/settings-" + hostname + ".json")) {
+    http.addHeader("Content-Type", "application/json");
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      Serial.printf("[HTTP] code: %d\n", httpCode);
+      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        Serial.print(F("Server response:"));
+        Serial.println(http.getString());
+        deserializeConfig(http.getString(), config);
+      }
+    } else {
+      Serial.printf("[HTTP] GET failed, error: %d = %s\n", httpCode, http.errorToString(httpCode).c_str());
+      return false;
     }
+    http.end();
   } else {
-    Serial.print(F("HTTP GET ERROR: failed getting settings from web! Error: "));
-    Serial.println(http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTPS] Unable to connect\n");
   }
   Alarm.delay(10);
-  http.end();
   client.flush();
-  return httpCode;
+  yield();
+  return true;
 }
 
 void writeSettingsWeb() {
-  Serial.println("= writeSettingsWeb: ");
+  Serial.println(F("= writeSettingsWeb: "));
 
   HTTPClient https;
   BearSSL::WiFiClientSecure *client = new BearSSL::WiFiClientSecure ;
@@ -456,25 +511,28 @@ void writeSettingsWeb() {
     client->setBufferSizes(1024, 1024);
   fingerprint2Hex();
   client->setFingerprint(sha1);
-  if (debug) {
+  if (config.thermostat.debug) {
     Serial.print(F("POST data to https://"));
     Serial.print(configHost);
-    Serial.print(" ");
     Serial.println(configPath);
-    Serial.print(" ");
   }
 
-  if (https.begin(*client, configHost, httpsPort, String(configPath) + "/index.php", true)) {
+  if (https.begin(*client, configHost, config.thermostat.httpsPort, String(configPath) + "/index.php", true)) {
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
     https.addHeader("User-Agent", "ESP8266HTTPClient");
-    https.addHeader("Host", configHost + ":" + httpsPort);
+    //https.addHeader("Host", configHost + ":" + config.thermostat.httpsPort);
     https.addHeader("Connection", "close");
-
-    int  httpCode = https.POST(String("") + "device=" + hostname + "&uploadJson=" + urlEncode(serializeJsonDynamic()));
+    String json = "";
+    DynamicJsonDocument doc(512);
+    JsonObject root = doc.to<JsonObject>();
+    // Fill the object
+    config.save(root);
+    serializeJson(doc, json);
+    int  httpCode = https.POST(String("") + "device=" + hostname + "&uploadJson=" + urlEncode(json));
     if (httpCode > 0) {
       Serial.printf("[HTTP] code: %d\n", httpCode);
       if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
-        if (debug) {
+        if (config.thermostat.debug) {
           Serial.print(F("Server response:"));
           Serial.println(https.getString());
         }
@@ -483,7 +541,7 @@ void writeSettingsWeb() {
       statusCleared = false;
       statusPrint("Saved settings to webserver");
     } else {
-      Serial.println("[HTTPS] failed, error: " + String(httpCode) + " = " +  https.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] POST failed, error: %d = %s\n", httpCode, https.errorToString(httpCode).c_str());
       status_timer = millis();
       statusPrint("ERROR saving to webserver");
     }
@@ -495,12 +553,13 @@ void writeSettingsWeb() {
   }
   Alarm.delay(10);
   client->flush();
-  if (debug)
+  yield();
+  if (config.thermostat.debug)
     debugVars();
 }
 
 void logToWebserver() {
-  Serial.println("= logToWebserver");
+  Serial.println(F("= logToWebserver"));
 
   // configure path + query for sending to logserver
   if (emptyFile) {
@@ -511,33 +570,31 @@ void logToWebserver() {
 
   HTTPClient https;
   BearSSL::WiFiClientSecure *client = new BearSSL::WiFiClientSecure ;
-  bool mfln = client->probeMaxFragmentLength(loghost, 443, 1024);
+  bool mfln = client->probeMaxFragmentLength(config.thermostat.loghost, 443, 1024);
   //Serial.printf("Maximum fragment Length negotiation supported: %s\n", mfln ? "yes" : "no");
   if (mfln)
     client->setBufferSizes(1024, 1024);
   fingerprint2Hex();
   client->setFingerprint(sha1);
-  if (debug) {
+  if (config.thermostat.debug) {
     Serial.print(F("GET data: https://"));
-    Serial.print(loghost);
+    Serial.print(config.thermostat.loghost);
+    Serial.println(logpath);
   }
 
-  if (https.begin(*client, loghost, httpsPort, logpath + "/logtemp.php?&status=" + relaisState + "&temperature=" + temp_c +
-  "&hostname=" + hostname + "&temp_min=" + temp_min + "&temp_max=" + temp_max + "&temp_dev=" + temp_dev +
-  "&interval=" + interval + "&heater=" + heater + "&manual=" + manual + "&debug=" + debug +
-  "&tempP0=" + tempP0 + "&hourP0=" + hourP0 + "&minuteP0=" + minuteP0 +
-  "&tempP1=" + tempP1 + "&hourP1=" + hourP1 + "&minuteP1=" + minuteP1 +
-  "&tempP2=" + tempP2 + "&hourP2=" + hourP2 + "&minuteP2=" + minuteP2, true)) {
+  if (https.begin(*client, config.thermostat.loghost, config.thermostat.httpsPort, logpath + "/logtemp.php?&status=" + relaisState + "&temperature=" + temp_c +
+  "&hostname=" + hostname + "&temp_min=" + config.thermostat.temp_min + "&temp_max=" + config.thermostat.temp_max + "&temp_dev=" + config.thermostat.temp_dev +
+  "&interval=" + config.thermostat.interval + "&heater=" + config.thermostat.heater + "&manual=" + config.thermostat.manual, true)) {
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
     https.addHeader("User-Agent", "ESP8266HTTPClient");
-    https.addHeader("Host", loghost + ":" + httpsPort);
+    //https.addHeader("Host", config.thermostat.loghost + ":" + config.thermostat.httpsPort);
     https.addHeader("Connection", "close");
 
     int  httpCode = https.GET();
     if (httpCode > 0) {
       Serial.printf("[HTTP] code: %d\n", httpCode);
       if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
-        if (debug) {
+        if (config.thermostat.debug) {
           Serial.print(F("Server response:"));
           Serial.println(https.getString());
         }
@@ -546,18 +603,19 @@ void logToWebserver() {
       statusCleared = false;
       statusDot(TFT_DARKGREEN);
     } else {
-      Serial.println("[HTTPS] failed, error: " + String(httpCode) + " = " +  https.errorToString(httpCode).c_str());
+      Serial.printf("[HTTP] GET failed, error: %d = %s\n", httpCode, https.errorToString(httpCode).c_str());
       status_timer = millis();
       statusDot(TFT_RED);
     }
     https.end();
   } else {
-    Serial.printf("[HTTPS] Unable to connect\n");
+    Serial.print(F("[HTTPS] Unable to connect\n"));
     status_timer = millis();
     statusDot(TFT_RED);
   }
   Alarm.delay(10);
   client->flush();
+  yield();
 }
 
 ////// Miscellaneous functions
@@ -576,30 +634,49 @@ void debugVars() {
   Serial.print(F("- RelaisState: "));
   Serial.println(relaisState);
   Serial.print(F("- heater: "));
-  Serial.println(heater);
+  Serial.println(config.thermostat.heater);
   Serial.print(F("- manual: "));
-  Serial.println(manual);
+  Serial.println(config.thermostat.manual);
   if (emptyFile) {
     Serial.print(F("- emptyFile: "));
     Serial.println(emptyFile);
     return;
   }
   Serial.print(F("- SHA1: "));
-  Serial.println(SHA1);
+  Serial.println(config.thermostat.SHA1);
   Serial.print(F("- loghost: "));
-  Serial.println(loghost);
+  Serial.println(config.thermostat.loghost);
   Serial.print(F("- httpsPort: "));
-  Serial.println(httpsPort);
+  Serial.println(config.thermostat.httpsPort);
   Serial.print(F("- interval: "));
-  Serial.println(interval);
+  Serial.println(config.thermostat.interval);
   Serial.print(F("- temp_min: "));
-  Serial.println(temp_min);
+  Serial.println(config.thermostat.temp_min);
   Serial.print(F("- temp_max: "));
-  Serial.println(temp_max);
+  Serial.println(config.thermostat.temp_max);
   Serial.print(F("- temp_dev: "));
-  Serial.println(temp_dev);
-  Serial.print(F("- MEM free heap: "));
+  Serial.println(config.thermostat.temp_dev);
+  Serial.print(F("- tempP0: "));
+  Serial.println(config.program[0].temp);
+  Serial.print(F("- hourP0: "));
+  Serial.println(config.program[0].hour);
+  Serial.print(F("- minuteP0: "));
+  Serial.println(config.program[0].minute);
+  Serial.print(F("- tempP1: "));
+  Serial.println(config.program[1].temp);
+  Serial.print(F("- hourP1: "));
+  Serial.println(config.program[1].hour);
+  Serial.print(F("- minuteP1: "));
+  Serial.println(config.program[1].minute);
+  Serial.print(F("- tempP2: "));
+  Serial.println(config.program[2].temp);
+  Serial.print(F("- hourP2: "));
+  Serial.println(config.program[2].hour);
+  Serial.print(F("- minuteP2: "));
+  Serial.println(config.program[2].minute);
+  Serial.print(F("- MEM free heap: \033[01;91m"));
   Serial.println(system_get_free_heap_size());
+  Serial.print(F("\033[00m"));
   printNextAlarmTime();
 }
 
@@ -607,7 +684,7 @@ void debugVars() {
 void fingerprint2Hex() {
   int j = 0;
   for (int i = 0; i < 60; i = i + 3) {
-    String x = ("0x" + SHA1.substring(i, i+2));
+    String x = ("0x" + String(config.thermostat.SHA1).substring(i, i+2));
     sha1[j] = strtoul(x.c_str(), NULL, 16);
     j++;
   }
@@ -652,17 +729,6 @@ String urlEncode(String str)
     yield();
   }
   return encodedString;
-}
-
-//// convert sizes from bytes to KB and MB
-String formatBytes(size_t bytes) {
-  if (bytes < 1024) {
-    return String(bytes) + "B";
-  } else if (bytes < (1024 * 1024)) {
-    return String(bytes / 1024.0) + "KB";
-  } else if (bytes < (1024 * 1024 * 1024)) {
-    return String(bytes / 1024.0 / 1024.0) + "MB";
-  }
 }
 
 //// WiFi config mode info
@@ -716,21 +782,21 @@ void statusClear() {
 
 // update the 3 display screens
 void updateDisplayN() {
-  // Update the normal display fields
+  Serial.print(F("- MEM free heap: "));
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
   sprintf(temp_short, "%.1f", temp_c);
-  setTemp = temp_min+(temp_max-temp_min)/2;
+  setTemp = config.thermostat.temp_min+(config.thermostat.temp_max-config.thermostat.temp_min)/2;
 
   // display temp_c
   tft.setFreeFont(&FreeSans24pt7b);
-  if (temp_c <= temp_min) 
+  if (temp_c <= config.thermostat.temp_min) 
     tft.setTextColor(TFT_BLUE);
-  if (temp_c >= temp_max) 
+  if (temp_c >= config.thermostat.temp_max) 
     tft.setTextColor(0xFB21);
-  if (temp_c > temp_min && temp_c < temp_max) 
+  if (temp_c > config.thermostat.temp_min && temp_c < config.thermostat.temp_max) 
     tft.setTextColor(TFT_YELLOW);
   tft.fillRect(DISP1_N_X - 1, DISP1_N_Y + 7, 100, 42, TFT_BLACK);
-  tft.drawString(String(temp_short), DISP1_N_X + 4, DISP1_N_Y + 9);
+  tft.drawString(temp_short, DISP1_N_X + 4, DISP1_N_Y + 9);
 
   // display setTemp
   tft.setFreeFont(&FreeSans18pt7b);
@@ -740,35 +806,27 @@ void updateDisplayN() {
 
   tft.setTextSize(1);
   tft.setFreeFont(Small_FONT);
-  String state = manual ? "manual" : "timer";
   wRelais = tft.drawString("Heating: ", 5, textLineY);
+  tft.fillRect(wRelais + 4, textLineY - 1, 162, 27, TFT_BLACK);
   tft.setFreeFont(&FreeSans12pt7b);
-  if (state == "timer") {
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString("MANUAL", wRelais + 5, textLineY);
+  if (!config.thermostat.manual) {
     tft.setTextColor(TFT_GREEN);
     wState = tft.drawString("TIMER", wRelais + 5, textLineY);
     tft.setTextColor(TFT_CYAN);
     wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
   } else {
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString("TIMER", wRelais + 5, textLineY);
     tft.setTextColor(0xFB21);
     wState = tft.drawString("MANUAL", wRelais + 5, textLineY);
     tft.setTextColor(TFT_CYAN);
     wComma = tft.drawString(", ", wRelais + wState + 5, textLineY);
   }
-  if (relaisState == "ON") {
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString(String("OFF"), wRelais + wState + wComma + 5, textLineY);
+  if (strcmp(relaisState, "ON")) {
     tft.setTextColor(TFT_GREEN);
-    tft.drawString(String(relaisState), wRelais + wState + wComma + 5, textLineY);
+    tft.drawString(relaisState, wRelais + wState + wComma + 5, textLineY);
   }
-  if (relaisState == "OFF") {
-    tft.setTextColor(TFT_BLACK);
-    tft.drawString(String("ON"), wRelais + wState + wComma + 5, textLineY);
+  if (strcmp(relaisState, "OFF")) {
     tft.setTextColor(0xFB21);
-    tft.drawString(String(relaisState), wRelais + wState + wComma + 5, textLineY);
+    tft.drawString(relaisState, wRelais + wState + wComma + 5, textLineY);
   }
 
   tft.setTextSize(1);
@@ -779,16 +837,17 @@ void updateDisplayN() {
   tft.drawString("WiFi: " + WiFi.SSID(), 5, textLineY + 30);
   tft.drawString("IP: " + String(lanIP), 5, textLineY + 60);
 
-  tft.drawString(String("") + printDigits(hourP0) + ":" + printDigits(minuteP0), textLineX, textLineY + 90);
-  int wP1 = tft.drawString(String(tempP0), 195, textLineY + 90);
+  tft.fillRect(textLineX, textLineY + 89, 100 , 83, TFT_BLACK);
+  tft.drawString(String("") + printDigits(config.program[0].hour) + ":" + printDigits(config.program[0].minute), textLineX, textLineY + 90);
+  int wP1 = tft.drawString(String(config.program[0].temp), 195, textLineY + 90);
   tft.drawCircle(221, textLineY + 93, 2, TFT_CYAN);
   tft.drawString("C", 224, textLineY + 90);
-  tft.drawString(String("") + printDigits(hourP1) + ":" + printDigits(minuteP1), textLineX, textLineY + 120);
-  int wP2 = tft.drawString(String(tempP1), 195, textLineY + 120);
+  tft.drawString(String("") + printDigits(config.program[1].hour) + ":" + printDigits(config.program[1].minute), textLineX, textLineY + 120);
+  int wP2 = tft.drawString(String(config.program[1].temp), 195, textLineY + 120);
   tft.drawCircle(221, textLineY + 123, 2, TFT_CYAN);
   tft.drawString("C", 224, textLineY + 120);
-  tft.drawString(String("") + printDigits(hourP2) + ":" + printDigits(minuteP2), textLineX, textLineY + 150);
-  int wP3 = tft.drawString(String(tempP2), 195, textLineY + 150);
+  tft.drawString(String("") + printDigits(config.program[2].hour) + ":" + printDigits(config.program[2].minute), textLineX, textLineY + 150);
+  int wP3 = tft.drawString(String(config.program[2].temp), 195, textLineY + 150);
   tft.drawCircle(221, textLineY + 153, 2, TFT_CYAN);
   tft.drawString("C", 224, textLineY + 150);
 
@@ -804,11 +863,11 @@ void updateDisplayS() {
 
   tft.setFreeFont(&FreeSans18pt7b);
   tft.setTextColor(TFT_CYAN);  // Set the font color
-  int xwidth1 = tft.drawString(String(temp_min), DISP1_S_X + 4, DISP1_S_Y + 9);
+  int xwidth1 = tft.drawString(String(config.thermostat.temp_min), DISP1_S_X + 4, DISP1_S_Y + 9);
   tft.fillRect(DISP1_S_X + 4 + xwidth1, DISP1_S_Y + 1, DISP1_S_W - xwidth1 - 5, DISP1_S_H - 2, BUTTON_LABEL);
-  int xwidth2 = tft.drawString(String(temp_max), DISP2_S_X + 4, DISP2_S_Y + 9);
+  int xwidth2 = tft.drawString(String(config.thermostat.temp_max), DISP2_S_X + 4, DISP2_S_Y + 9);
   tft.fillRect(DISP2_S_X + 4 + xwidth2, DISP2_S_Y + 1, DISP2_S_W - xwidth2 - 5, DISP2_S_H - 2, BUTTON_LABEL);
-  int xwidth3 = tft.drawString(String(interval/60000), DISP3_S_X + 4, DISP3_S_Y + 9);
+  int xwidth3 = tft.drawString(String(config.thermostat.interval/60000), DISP3_S_X + 4, DISP3_S_Y + 9);
   tft.fillRect(DISP3_S_X + 4 + xwidth3, DISP3_S_Y + 1, DISP3_S_W - xwidth3 - 5, DISP3_S_H - 2, BUTTON_LABEL);
 }
 
@@ -827,29 +886,29 @@ void updateDisplayP() {
   tft.drawString("Timer 3:", 5, DISP_P_Y + 140);
 
   tft.fillRect(DISP_P_X - 2, DISP_P_Y + 1, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(printDigits(hourP0)), DISP_P_X, DISP_P_Y);
+  tft.drawString(String(printDigits(config.program[0].hour)), DISP_P_X, DISP_P_Y);
   tft.drawString(":", DISP_P_X + 22, DISP_P_Y);
-  tft.drawString(String(printDigits(minuteP0)), DISP_P_X + 27, DISP_P_Y);
+  tft.drawString(String(printDigits(config.program[0].minute)), DISP_P_X + 27, DISP_P_Y);
   tft.fillRect(184, DISP_P_Y + 1, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(tempP0), 185, DISP_P_Y);
+  tft.drawString(String(config.program[0].temp), 185, DISP_P_Y);
   tft.drawCircle(211, DISP_P_Y + 3, 2, TFT_CYAN);
   tft.drawString("C", 214, DISP_P_Y);
 
   tft.fillRect(DISP_P_X - 2, DISP_P_Y + 71, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(printDigits(hourP1)), DISP_P_X, DISP_P_Y + 70);
+  tft.drawString(String(printDigits(config.program[1].hour)), DISP_P_X, DISP_P_Y + 70);
   tft.drawString(":", DISP_P_X + 22, DISP_P_Y + 70);
-  tft.drawString(String(printDigits(minuteP1)), DISP_P_X + 27, DISP_P_Y + 70);
+  tft.drawString(String(printDigits(config.program[1].minute)), DISP_P_X + 27, DISP_P_Y + 70);
   tft.fillRect(184, DISP_P_Y + 71, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(tempP1), 185, DISP_P_Y + 70);
+  tft.drawString(String(config.program[1].temp), 185, DISP_P_Y + 70);
   tft.drawCircle(211, DISP_P_Y + 73, 2, TFT_CYAN);
   tft.drawString("C", 214, DISP_P_Y + 70);
 
   tft.fillRect(DISP_P_X - 2, DISP_P_Y + 141, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(printDigits(hourP2)), DISP_P_X, DISP_P_Y + 140);
+  tft.drawString(String(printDigits(config.program[2].hour)), DISP_P_X, DISP_P_Y + 140);
   tft.drawString(":", DISP_P_X + 22, DISP_P_Y + 140);
-  tft.drawString(String(printDigits(minuteP2)), DISP_P_X + 27, DISP_P_Y + 140);
+  tft.drawString(String(printDigits(config.program[2].minute)), DISP_P_X + 27, DISP_P_Y + 140);
   tft.fillRect(184, DISP_P_Y + 141, DISP_P_W, DISP_P_H, TFT_BLACK);
-  tft.drawString(String(tempP2), 185, DISP_P_Y + 140);
+  tft.drawString(String(config.program[2].temp), 185, DISP_P_Y + 140);
   tft.drawCircle(211, DISP_P_Y + 143, 2, TFT_CYAN);
   tft.drawString("C", 214, DISP_P_Y + 140);
 
@@ -890,7 +949,11 @@ void getTime() {
   if(minuteNow < 10)  // add a zero if minute is under 10
     timeNow += "0";
   timeNow += minuteNow;
-  Serial.println(String(epochTime) + " => " + String(date) + " - " + String(timeNow));
+  Serial.print(epochTime);
+  Serial.print(F(" => "));
+  Serial.print(date);
+  Serial.print(F(" - "));
+  Serial.println(timeNow);
 }
 
 // print next alarm time to serial
@@ -927,13 +990,13 @@ void changeTimers(bool resetTimers = false) {
   Alarm.free(0);
   Alarm.free(1);
   Alarm.free(2);
-  if (! resetTimers && ! manual) {
-    Alarm.alarmRepeat(hourP0, minuteP0, 0, triggerTimerP1);
-    Alarm.alarmRepeat(hourP1, minuteP1, 0, triggerTimerP2);
-    Alarm.alarmRepeat(hourP2, minuteP2, 0, triggerTimerP3);
+  if (! resetTimers && ! config.thermostat.manual) {
+    Alarm.alarmRepeat(config.program[0].hour, config.program[0].minute, 0, triggerTimerP1);
+    Alarm.alarmRepeat(config.program[1].hour, config.program[1].minute, 0, triggerTimerP2);
+    Alarm.alarmRepeat(config.program[2].hour, config.program[2].minute, 0, triggerTimerP3);
   }
   if (! program_screen && ! setup_screen)
-  if (debug) {
+  if (config.thermostat.debug) {
     Serial.print(F("= Timers changed, active alarms: "));
     Serial.println(Alarm.count());
     printNextAlarmTime();
@@ -941,14 +1004,13 @@ void changeTimers(bool resetTimers = false) {
 }
 
 // add leading 0s to times
-String printDigits(int digit) {
-  String digitS;
+char* printDigits(int digit) {
   if (digit < 10) {
-    digitS = String("0") + String(digit);
+    sprintf(buffer, "0%d", digit);
   } else {
-    digitS = String(digit);
+    sprintf(buffer, "%d", digit);
   }
-  return digitS;
+  return buffer;
 }
 
 // draw clock face and hands
@@ -1001,34 +1063,34 @@ void drawClockTime(int clockX,int clockY,int clockRadius) {
 
 // execute / trigger timers actions
 void triggerTimerP1() {
-  temp_min = tempP0 -1;
-  temp_max = tempP0 +1;
+  config.thermostat.temp_min = config.program[0].temp - 1;
+  config.thermostat.temp_max = config.program[0].temp + 1;
   autoSwitchRelais();
   if (! setup_screen && ! program_screen)
     updateDisplayN();
-  if (debug)
+  if (config.thermostat.debug)
     Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
 void triggerTimerP2() {
-  temp_min = tempP1 -1;
-  temp_max = tempP1 +1;
+  config.thermostat.temp_min = config.program[1].temp - 1;
+  config.thermostat.temp_max = config.program[1].temp + 1;
   autoSwitchRelais();
   if (! setup_screen && ! program_screen)
     updateDisplayN();
-  if (debug)
+  if (config.thermostat.debug)
     Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
 void triggerTimerP3() {
-  temp_min = tempP2 -1;
-  temp_max = tempP2 +1;
+  config.thermostat.temp_min = config.program[2].temp - 1;
+  config.thermostat.temp_max = config.program[2].temp + 1;
   autoSwitchRelais();
   if (! setup_screen && ! program_screen)
     updateDisplayN();
-  if (debug)
+  if (config.thermostat.debug)
     Serial.print(F("Triggered AlarmID="));
     Serial.println(Alarm.getTriggeredAlarmId());
 }
@@ -1045,33 +1107,41 @@ void handleNotFound(){
 }
 
 void updateSettingsWebform() {
-  Serial.println("\n= updateSettingsWebform");
+  Serial.println(F("\n= updateSettingsWebform"));
 
   if (server.args() < 1 || server.args() > 19 || !server.arg("SHA1") || !server.arg("loghost")) {
     server.send(400, "text/html", "400: Invalid Request\n");
     return;
   }
-  SHA1 = server.arg("SHA1");
-  loghost = server.arg("loghost");
-  httpsPort = server.arg("httpsPort").toInt();
-  interval = server.arg("interval").toInt();
-  temp_min = server.arg("temp_min").toInt();
-  temp_max = server.arg("temp_max").toInt();
-  temp_dev = server.arg("temp_dev").toFloat();
-  heater = server.arg("heater").toInt();
-  manual = server.arg("manual").toInt();
-  debug = server.arg("debug").toInt();
-  tempP0 = server.arg("tempP0").toInt();
-  hourP0 = server.arg("hourP0").toInt();
-  minuteP0 = server.arg("minuteP0").toInt();
-  tempP1 = server.arg("tempP1").toInt();
-  hourP1 = server.arg("hourP1").toInt();
-  minuteP1 = server.arg("minuteP1").toInt();
-  tempP2 = server.arg("tempP2").toInt();
-  hourP2 = server.arg("hourP2").toInt();
-  minuteP2 = server.arg("minuteP2").toInt();
-  writeSettingsFile();
-  server.send(200, "text/html", "Arduino response: Code 200, OK.");
+  strcpy(config.thermostat.SHA1, server.arg("SHA1").c_str());
+  strcpy(config.thermostat.loghost, server.arg("loghost").c_str());
+  config.thermostat.httpsPort = server.arg("httpsPort").toInt();
+  config.thermostat.interval = server.arg("interval").toInt();
+  config.thermostat.temp_min = server.arg("temp_min").toInt();
+  config.thermostat.temp_max = server.arg("temp_max").toInt();
+  config.thermostat.temp_dev = server.arg("temp_dev").toFloat();
+  config.thermostat.heater = true;
+  if (server.arg("manual") == "true" || server.arg("manual") == "1") {
+    config.thermostat.manual = true;
+  } else {
+    config.thermostat.manual = false;
+  }
+  if (server.arg("debug") == "true" || server.arg("debug") == "1") {
+    config.thermostat.debug = true;
+  } else {
+    config.thermostat.debug = false;
+  }
+  config.program[0].temp = server.arg("tempP0").toInt();
+  config.program[0].hour = server.arg("hourP0").toInt();
+  config.program[0].minute = server.arg("minuteP0").toInt();
+  config.program[1].temp = server.arg("tempP1").toInt();
+  config.program[1].hour = server.arg("hourP1").toInt();
+  config.program[1].minute = server.arg("minuteP1").toInt();
+  config.program[2].temp = server.arg("tempP2").toInt();
+  config.program[2].hour = server.arg("hourP2").toInt();
+  config.program[2].minute = server.arg("minuteP2").toInt();
+  saveFile();
+  server.send(200, "text/html", "Arduino response: Code 200, OK.\n" + String(server.arg("manual")));
   status_timer = millis();
   statusPrint("Settings updated from webform");
   Alarm.delay(10);
@@ -1115,15 +1185,11 @@ void setup() {
     SPIFFS.format();
     SPIFFS.begin();
   }
-  Serial.println("");
-  Serial.println(F("SPIFFS started. Contents:"));
+  Serial.println(F("\nSPIFFS started. Contents:"));
   Dir dir = SPIFFS.openDir("/");
   while (dir.next()) { // List the file system contents
-    String fileName = dir.fileName();
-    size_t fileSize = dir.fileSize();
-    Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
+    Serial.printf("\tFS File: %s, size: %d\r\n", dir.fileName().c_str(), dir.fileSize());
   }
-  Serial.println("");
 
   // Calibrate the touch screen and retrieve the scaling factors
   uint16_t calData[5];
@@ -1178,10 +1244,30 @@ void setup() {
 
   switchRelais("OFF"); // start with relais OFF
 
-  if (readSettingsWeb() != 200) // first, try reading settings from webserver
-    readSettingsFile(); // if failed, read settings from SPIFFS
-  if (interval < 10000) // set a failsafe interval
-    interval = 60000; // 20 secs
+  if (!readSettingsWeb()) // first, try reading settings from webserver
+    if (!loadFile()) { // if failed, read settings from SPIFFS
+      Serial.println(F("Using default config"));
+      strcpy(config.thermostat.SHA1, "B0:4E:57:48:5A:97:45:BB:E2:EC:48:32:8B:ED:11:43:9F:BD:1A:F3");
+      strcpy(config.thermostat.loghost, "192.168.178.25");
+      config.thermostat.interval = 600000;
+      config.thermostat.heater = true;
+      config.thermostat.manual = false;
+      config.thermostat.debug = true;
+      config.thermostat.temp_dev = -0.5;
+      config.thermostat.temp_min = 24;
+      config.thermostat.temp_max = 26;
+      config.thermostat.httpsPort = 443;
+      config.program[0].temp = 23;
+      config.program[0].hour = 6;
+      config.program[0].minute = 30;
+      config.program[1].temp = 25;
+      config.program[1].hour = 9;
+      config.program[1].minute = 30;
+      config.program[2].temp = 22;
+      config.program[2].hour = 21;
+      config.program[2].minute = 30;
+      config.programs = 3;
+    }
   getTemperature();
   getTime();
   setTime(local);
@@ -1198,7 +1284,7 @@ void setup() {
     autoSwitchRelais();
     if (! setup_screen && ! program_screen)
       updateDisplayN();
-    if (debug)
+    if (config.thermostat.debug)
     debugVars();
   });
   server.begin();
@@ -1222,7 +1308,7 @@ void loop(void) {
     clockTime = millis();
   }
 
-  if (passed > interval) {
+  if (passed > config.thermostat.interval) {
     Serial.println(F("\nInterval passed"));
     getTemperature();
     autoSwitchRelais();
@@ -1230,10 +1316,10 @@ void loop(void) {
     prevTime = presTime; // save the last time
     if (! setup_screen && ! program_screen)
       updateDisplayN();
-    if (debug)
+    if (config.thermostat.debug)
       debugVars();
   } else {
-    printProgress(passed * 100 / interval);
+    printProgress(passed * 100 / config.thermostat.interval);
   }
 
   // auto exit setup screen after 20s
@@ -1387,26 +1473,26 @@ void loop(void) {
         // change program times and temps
         // P1 -
         if (b == 0) {
-          if (minuteP0 == 0) {
-            minuteP0 = 30;
-            if (hourP0 == 0) hourP0  = 23;
-            else hourP0 --;
+          if (config.program[0].minute == 0) {
+            config.program[0].minute = 30;
+            if (config.program[0].hour == 0) config.program[0].hour  = 23;
+            else config.program[0].hour--;
           } else {
-            minuteP0 = 0;
+            config.program[0].minute = 0;
           }
           scheduleStarted = millis();
           Alarm.delay(200);
         }
         // P1 +
         if (b == 1) {
-          if (minuteP0 == 0) {
-            minuteP0 = 30;
+          if (config.program[0].minute == 0) {
+            config.program[0].minute = 30;
           } else {
-            minuteP0 = 0;
-            if (hourP0 == 23) {
-              hourP0 = 0;
+            config.program[0].minute = 0;
+            if (config.program[0].hour == 23) {
+              config.program[0].hour = 0;
             } else {
-              hourP0 ++;
+              config.program[0].hour++;
             }
           }
           scheduleStarted = millis();
@@ -1414,26 +1500,26 @@ void loop(void) {
         }
         // P2 -
         if (b == 2) {
-          if (minuteP1 == 0) {
-            minuteP1 = 30;
-            if (hourP1 == 0) hourP1  = 23;
-            else hourP1 --;
+          if (config.program[1].minute == 0) {
+            config.program[1].minute = 30;
+            if (config.program[1].hour == 0) config.program[1].hour  = 23;
+            else config.program[1].hour--;
           } else {
-            minuteP1 = 0;
+            config.program[1].minute = 0;
           }
           scheduleStarted = millis();
           Alarm.delay(200);
         }
         // P2 +
         if (b == 3) {
-          if (minuteP1 == 0) {
-            minuteP1 = 30;
+          if (config.program[1].minute == 0) {
+            config.program[1].minute = 30;
           } else {
-            minuteP1 = 0;
-            if (hourP1 == 23) {
-              hourP1 = 0;
+            config.program[1].minute = 0;
+            if (config.program[1].hour == 23) {
+              config.program[1].hour = 0;
             } else {
-              hourP1 ++;
+              config.program[1].hour++;
             }
           }
           scheduleStarted = millis();
@@ -1441,26 +1527,26 @@ void loop(void) {
         }
         // P3 -
         if (b == 4) {
-          if (minuteP2 == 0) {
-            minuteP2 = 30;
-            if (hourP2 == 0) hourP2  = 23;
-            else hourP2 --;
+          if (config.program[2].minute == 0) {
+            config.program[2].minute = 30;
+            if (config.program[2].hour == 0) config.program[2].hour  = 23;
+            else config.program[2].hour --;
           } else {
-            minuteP2 = 0;
+            config.program[2].minute = 0;
           }
           scheduleStarted = millis();
           Alarm.delay(200);
         }
         // P3 +
         if (b == 5) {
-          if (minuteP2 == 0) {
-            minuteP2 = 30;
+          if (config.program[2].minute == 0) {
+            config.program[2].minute = 30;
           } else {
-            minuteP2 = 0;
-            if (hourP2 == 23) {
-              hourP2 = 0;
+            config.program[2].minute = 0;
+            if (config.program[2].hour == 23) {
+              config.program[2].hour = 0;
             } else {
-              hourP2 ++;
+              config.program[2].hour ++;
             }
           }
           scheduleStarted = millis();
@@ -1468,35 +1554,35 @@ void loop(void) {
         }
 
         // P1 temp
-        if (b == 6 && tempP0 > 18) {
-          tempP0--;
+        if (b == 6 && config.program[0].temp > 18) {
+          config.program[0].temp--;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
-        if (b == 7 && tempP0 < 32) {
-          tempP0++;
+        if (b == 7 && config.program[0].temp < 32) {
+          config.program[0].temp++;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
         // P2 temp
-        if (b == 8 && tempP1 > 18) {
-          tempP1--;
+        if (b == 8 && config.program[1].temp > 18) {
+          config.program[1].temp--;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
-        if (b == 9 && tempP1 < 32) {
-          tempP1++;
+        if (b == 9 && config.program[1].temp < 32) {
+          config.program[1].temp++;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
         // P3 temp
-        if (b == 10 && tempP2 > 18) {
-          tempP2--;
+        if (b == 10 && config.program[2].temp > 18) {
+          config.program[2].temp--;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
-        if (b == 11 && tempP2 < 32) {
-          tempP2++;
+        if (b == 11 && config.program[2].temp < 32) {
+          config.program[2].temp++;
           scheduleStarted = millis();
           Alarm.delay(200);
         }
@@ -1546,7 +1632,7 @@ void loop(void) {
         // assign action
         // 4/8 - first col
         if (b == 4) {
-          manual = false;
+          config.thermostat.manual = false;
           changeTimers();
           status_timer = millis();
           setupStarted = millis();
@@ -1554,7 +1640,7 @@ void loop(void) {
           Alarm.delay(200);
         }
         if (b == 8) {
-          manual = true;
+          config.thermostat.manual = true;
           changeTimers(true);
           status_timer = millis();
           setupStarted = millis();
@@ -1563,15 +1649,15 @@ void loop(void) {
         }
 
         // 5/9 - second col
-        if (b == 5 && temp_min < 31) {
-          temp_min++;
+        if (b == 5 && config.thermostat.temp_min < 31) {
+          config.thermostat.temp_min++;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased temp min");
           Alarm.delay(200);
         }
-        if (b == 9 && temp_min > 17) {
-          temp_min--;
+        if (b == 9 && config.thermostat.temp_min > 17) {
+          config.thermostat.temp_min--;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased temp min");
@@ -1579,15 +1665,15 @@ void loop(void) {
         }
 
         // 6/10 - third col
-        if (b == 6 && temp_max < 33) {
-          temp_max++;
+        if (b == 6 && config.thermostat.temp_max < 33) {
+          config.thermostat.temp_max++;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased temp max");
           Alarm.delay(200);
         }
-        if (b == 10 && temp_max > 19) {
-          temp_max--;
+        if (b == 10 && config.thermostat.temp_max > 19) {
+          config.thermostat.temp_max--;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased temp max");
@@ -1595,15 +1681,15 @@ void loop(void) {
         }
 
         // 7/11 - fourth col
-        if (b == 7 && interval <= 840000) {
-          interval = interval + 60000;
+        if (b == 7 && config.thermostat.interval <= 840000) {
+          config.thermostat.interval = config.thermostat.interval + 60000;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Increased interval");
           Alarm.delay(200);
         }
-        if (b == 11 && interval >= 120000) {
-          interval = interval - 60000;
+        if (b == 11 && config.thermostat.interval >= 120000) {
+          config.thermostat.interval = config.thermostat.interval - 60000;
           status_timer = millis();
           setupStarted = millis();
           statusPrint("Decreased interval");
@@ -1624,9 +1710,9 @@ void loop(void) {
         }
         if (b == 13) {
           // Reset settings
-          temp_min = 24;
-          temp_max = 26;
-          interval = 300000;
+          config.thermostat.temp_min = 24;
+          config.thermostat.temp_max = 26;
+          config.thermostat.interval = 600000;
           changeTimers();
           status_timer = millis();
           setupStarted = millis();
@@ -1635,7 +1721,7 @@ void loop(void) {
         }
         if (b == 14) {
           // Save settings
-          writeSettingsFile();
+          saveFile();
           writeSettingsWeb();
           setupStarted = millis();
           Alarm.delay(200);
@@ -1700,17 +1786,17 @@ void loop(void) {
 
         // assign action
         // 0/1
-        if (b == 0 && temp_min < 31 && temp_max < 33) {
-            temp_min++;
-            temp_max++;
+        if (b == 0 && config.thermostat.temp_min < 31 && config.thermostat.temp_max < 33) {
+            config.thermostat.temp_min++;
+            config.thermostat.temp_max++;
             autoSwitchRelais();
             status_timer = millis();
             statusPrint("Temperature raised");
             Alarm.delay(200);
         }
-        if (b == 1 && temp_min > 17 && temp_max > 19) {
-            temp_min--;
-            temp_max--;
+        if (b == 1 && config.thermostat.temp_min > 17 && config.thermostat.temp_max > 19) {
+            config.thermostat.temp_min--;
+            config.thermostat.temp_max--;
             autoSwitchRelais();
             status_timer = millis();
             statusPrint("Temperature lowered");
