@@ -148,9 +148,9 @@ struct thermostatConfig {
 };
 
 struct programsConfig {
-  int temp;
   int hour;
   int minute;
+  int temp;
 
   void load(JsonObjectConst);
   void save(JsonObject) const;
@@ -172,9 +172,8 @@ bool deserializeConfig(String src, Config &config);
 
 const size_t jsonCapacity = JSON_OBJECT_SIZE(19) + 300;
 const char *sFile = "/settings.txt";  // SPIFFS file name must start with "/".
-const static String configHost = "192.168.178.25"; // chicken/egg situation, you have to get the initial config from somewhere
-const static String configPath = "/temp";
-const static String logpath = "/temp";
+const static String configHost = "temperature.hugo.ro"; // chicken/egg situation, you have to get the initial config from somewhere
+unsigned long blink;
 unsigned long uptime = (millis() / 1000 );
 unsigned long status_timer = millis();
 unsigned long setupStarted = millis();
@@ -262,9 +261,9 @@ void thermostatConfig::save(JsonObject obj) const {
 }
 
 void programsConfig::save(JsonObject obj) const {
-  obj["temp"] = temp;
   obj["hour"] = hour;
   obj["minute"] = minute;
+  obj["temp"] = temp;
 }
 
 void thermostatConfig::load(JsonObjectConst obj) {
@@ -281,9 +280,9 @@ void thermostatConfig::load(JsonObjectConst obj) {
 }
 
 void programsConfig::load(JsonObjectConst obj) {
-  temp = obj["temp"];
   hour = obj["hour"];
   minute = obj["minute"];
+  temp = obj["temp"];
 }
 
 void Config::load(JsonObjectConst obj) {
@@ -333,8 +332,8 @@ bool serializeConfig(const Config &config, Print &dst) {
   if (config.thermostat.debug) {
     Serial.println("jsonPretty=");
     serializeJsonPretty(doc, Serial);
-    Serial.println();
   }
+  Serial.println("OK");
   // Serialize JSON to file
   return serializeJson(doc, dst) > 0;
 }
@@ -365,13 +364,17 @@ bool loadFile() {
     return false;
   }
 
+  String json="";
+  while (file.available()) {
+    json += (char)file.read();
+  }
+
   // Parse the JSON object in the file
-  success = deserializeConfig((String)file.read(), config);
+  success = deserializeConfig(json, config);
   if (!success) {
     Serial.println(F("Failed to deserialize configuration"));
     return false;
   }
-
   return true;
 }
 
@@ -389,6 +392,8 @@ void saveFile() {
   if (!success) {
     Serial.println(F("Failed to serialize configuration"));
   }
+  if (config.thermostat.debug)
+    printFile();
 }
 
 // Prints the content of a file to the Serial
@@ -400,6 +405,7 @@ void printFile() {
     return;
   }
 
+  Serial.print("Settings JSON in SPIFFS file=");
   // Extract each by one by one
   while (file.available()) {
     Serial.print((char)file.read());
@@ -469,14 +475,11 @@ void clearSpiffs() {
 
 bool readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
   Serial.println(F("= readSettingsWeb"));
-  if (config.thermostat.debug) {
-    Serial.print(F("Getting settings from http://"));
-    Serial.print(configHost);
-    Serial.println(configPath);
-  }
+  Serial.print(F("Getting settings from http://"));
+  Serial.println(configHost);
   WiFiClient client;
   HTTPClient http;
-  if (http.begin(client, "http://" + configHost + configPath + "/settings-" + hostname + ".json")) {
+  if (http.begin(client, "http://" + configHost + "/settings-" + hostname + ".json")) {
     http.addHeader("Content-Type", "application/json");
     int httpCode = http.GET();
     if (httpCode > 0) {
@@ -514,10 +517,9 @@ void writeSettingsWeb() {
   if (config.thermostat.debug) {
     Serial.print(F("POST data to https://"));
     Serial.print(configHost);
-    Serial.println(configPath);
   }
 
-  if (https.begin(*client, configHost, config.thermostat.httpsPort, String(configPath) + "/index.php", true)) {
+  if (https.begin(*client, configHost, config.thermostat.httpsPort, "/index.php", true)) {
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
     https.addHeader("User-Agent", "ESP8266HTTPClient");
     //https.addHeader("Host", configHost + ":" + config.thermostat.httpsPort);
@@ -525,7 +527,6 @@ void writeSettingsWeb() {
     String json = "";
     DynamicJsonDocument doc(512);
     JsonObject root = doc.to<JsonObject>();
-    // Fill the object
     config.save(root);
     serializeJson(doc, json);
     int  httpCode = https.POST(String("") + "device=" + hostname + "&uploadJson=" + urlEncode(json));
@@ -579,10 +580,9 @@ void logToWebserver() {
   if (config.thermostat.debug) {
     Serial.print(F("GET data: https://"));
     Serial.print(config.thermostat.loghost);
-    Serial.println(logpath);
   }
 
-  if (https.begin(*client, config.thermostat.loghost, config.thermostat.httpsPort, logpath + "/logtemp.php?&status=" + relaisState + "&temperature=" + temp_c +
+  if (https.begin(*client, config.thermostat.loghost, config.thermostat.httpsPort, String("") + "/logtemp.php?&status=" + relaisState + "&temperature=" + temp_c +
   "&hostname=" + hostname + "&temp_min=" + config.thermostat.temp_min + "&temp_max=" + config.thermostat.temp_max + "&temp_dev=" + config.thermostat.temp_dev +
   "&interval=" + config.thermostat.interval + "&heater=" + config.thermostat.heater + "&manual=" + config.thermostat.manual, true)) {
     https.addHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -656,24 +656,24 @@ void debugVars() {
   Serial.println(config.thermostat.temp_max);
   Serial.print(F("- temp_dev: "));
   Serial.println(config.thermostat.temp_dev);
-  Serial.print(F("- tempP0: "));
-  Serial.println(config.program[0].temp);
   Serial.print(F("- hourP0: "));
   Serial.println(config.program[0].hour);
   Serial.print(F("- minuteP0: "));
   Serial.println(config.program[0].minute);
-  Serial.print(F("- tempP1: "));
-  Serial.println(config.program[1].temp);
+  Serial.print(F("- tempP0: "));
+  Serial.println(config.program[0].temp);
   Serial.print(F("- hourP1: "));
   Serial.println(config.program[1].hour);
   Serial.print(F("- minuteP1: "));
   Serial.println(config.program[1].minute);
-  Serial.print(F("- tempP2: "));
-  Serial.println(config.program[2].temp);
+  Serial.print(F("- tempP1: "));
+  Serial.println(config.program[1].temp);
   Serial.print(F("- hourP2: "));
   Serial.println(config.program[2].hour);
   Serial.print(F("- minuteP2: "));
   Serial.println(config.program[2].minute);
+  Serial.print(F("- tempP2: "));
+  Serial.println(config.program[2].temp);
   Serial.print(F("- MEM free heap: \033[01;91m"));
   Serial.println(system_get_free_heap_size());
   Serial.print(F("\033[00m"));
@@ -1141,7 +1141,12 @@ void updateSettingsWebform() {
   config.program[2].hour = server.arg("hourP2").toInt();
   config.program[2].minute = server.arg("minuteP2").toInt();
   saveFile();
-  server.send(200, "text/html", "Arduino response: Code 200, OK.\n" + String(server.arg("manual")));
+  String json = "";
+  DynamicJsonDocument doc(512);
+  JsonObject root = doc.to<JsonObject>();
+  config.save(root);
+  serializeJson(doc, json);
+  server.send(200, "text/html", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n\tbody { \n\t\tpadding: 3rem; \n\t\tfont-size: 16px;\n\t}\n\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n</head>\n<body>\nArduino response: Code 200, OK.\n<br>Back to \n<form method='POST' action='https://temperature.hugo.ro'>\n\t<button name='device' value='" + String(hostname) + "'>Graph</button></form>\n<br>\nJSON root: \n<br>\n<div id='debug'></div>\n<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n<script>\n\tvar root = " + json + ";\n\tvar tbl = prettyPrint(root);\n\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n</body>\n");
   status_timer = millis();
   statusPrint("Settings updated from webform");
   Alarm.delay(10);
@@ -1244,7 +1249,7 @@ void setup() {
 
   switchRelais("OFF"); // start with relais OFF
 
-  if (!readSettingsWeb()) // first, try reading settings from webserver
+  if (!readSettingsWeb()) { // first, try reading settings from webserver
     if (!loadFile()) { // if failed, read settings from SPIFFS
       Serial.println(F("Using default config"));
       strcpy(config.thermostat.SHA1, "B0:4E:57:48:5A:97:45:BB:E2:EC:48:32:8B:ED:11:43:9F:BD:1A:F3");
@@ -1257,17 +1262,18 @@ void setup() {
       config.thermostat.temp_min = 24;
       config.thermostat.temp_max = 26;
       config.thermostat.httpsPort = 443;
-      config.program[0].temp = 23;
       config.program[0].hour = 6;
       config.program[0].minute = 30;
-      config.program[1].temp = 25;
+      config.program[0].temp = 23;
       config.program[1].hour = 9;
       config.program[1].minute = 30;
-      config.program[2].temp = 22;
+      config.program[1].temp = 25;
       config.program[2].hour = 21;
       config.program[2].minute = 30;
+      config.program[2].temp = 22;
       config.programs = 3;
     }
+  }
   getTemperature();
   getTime();
   setTime(local);
@@ -1296,6 +1302,12 @@ void setup() {
 //------------------------------------------------------------------------------------------
 
 void loop(void) {
+  if (millis() - blink >= 700)
+    if (system_get_free_heap_size() <= 11000) {
+      tft.fillCircle(230, 310, 2, TFT_RED);
+    } else {
+      tft.fillCircle(230, 310, 2, TFT_BLUE);
+    }
   server.handleClient();
   MDNS.update();
   Alarm.delay(10);
@@ -1309,6 +1321,11 @@ void loop(void) {
   }
 
   if (passed > config.thermostat.interval) {
+    if (system_get_free_heap_size() < 10000) {
+      tft.fillScreen(TFT_RED);
+      Alarm.delay(5000);
+      ESP.reset();
+    }
     Serial.println(F("\nInterval passed"));
     getTemperature();
     autoSwitchRelais();
@@ -1342,6 +1359,10 @@ void loop(void) {
 
   if (! statusCleared)
     statusClear();
+  if (millis() - blink >= 1000) {
+    tft.fillCircle(230, 310, 3, TFT_BLACK);
+    blink = millis();
+  }
   
   // ------------ DISPLAY ------------ //
 
