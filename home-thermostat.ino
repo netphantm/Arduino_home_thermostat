@@ -329,11 +329,10 @@ bool serializeConfig(const Config &config, Print &dst) {
   // Fill the object
   config.save(root);
 
+  Serial.println("OK");
   if (config.thermostat.debug) {
-    Serial.println("jsonPretty=");
     serializeJsonPretty(doc, Serial);
   }
-  Serial.println("OK");
   // Serialize JSON to file
   return serializeJson(doc, dst) > 0;
 }
@@ -1146,7 +1145,7 @@ void updateSettingsWebform() {
   JsonObject root = doc.to<JsonObject>();
   config.save(root);
   serializeJson(doc, json);
-  server.send(200, "text/html", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n\tbody { \n\t\tpadding: 3rem; \n\t\tfont-size: 16px;\n\t}\n\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n</head>\n<body>\nArduino response: Code 200, OK.\n<br>Back to \n<form method='POST' action='https://temperature.hugo.ro'>\n\t<button name='device' value='" + String(hostname) + "'>Graph</button></form>\n<br>\nJSON root: \n<br>\n<div id='debug'></div>\n<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n<script>\n\tvar root = " + json + ";\n\tvar tbl = prettyPrint(root);\n\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n</body>\n");
+  server.send(200, "text/html", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n\tbody { \n\t\tfont-size: 16px;\n\t}\n\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n</head>\n<body>\nArduino response: Code 200, OK.\n<br>Back to \n<form method='POST' action='https://temperature.hugo.ro'>\n\t<button name='device' value='" + String(hostname) + "'>Graph</button>\n</form>\n<br>\nJSON root: \n<br>\n<div id='debug'></div>\n<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n<script>\n\tvar root = " + json + ";\n\tvar tbl = prettyPrint(root);\n\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n</body>\n");
   status_timer = millis();
   statusPrint("Settings updated from webform");
   Alarm.delay(10);
@@ -1321,9 +1320,9 @@ void loop(void) {
   }
 
   if (passed > config.thermostat.interval) {
-    if (system_get_free_heap_size() < 10000) {
+    if (system_get_free_heap_size() < 5000) {
       tft.fillScreen(TFT_RED);
-      Alarm.delay(5000);
+      Alarm.delay(2000);
       ESP.reset();
     }
     Serial.println(F("\nInterval passed"));
