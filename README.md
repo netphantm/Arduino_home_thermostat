@@ -64,7 +64,7 @@ I suppose it could be integrated into [Home Assistant](https://hass.io/) (or ano
 
 ### Images
 
-<img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-01.png" alt="pic-01" width="290px" height="516px"> <img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-02.png" alt="pic-02" width="290px" height="516px"> <img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-03.png" alt="pic-03" width="290px" height="516px">
+<img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-01.png" alt="pic-01" width="290px" height="387px"> <img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-02.png" alt="pic-02" width="290px" height="387px"> <img src="https://github.com/netphantm/Arduino_home-thermostat/raw/master/pics/pic-03.png" alt="pic-03" width="290px" height="387px">
 
 ---
 
