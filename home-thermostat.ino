@@ -979,8 +979,7 @@ void getTime() {
   unsigned long epochTime =  timeClient.getEpochTime();
   // convert received time stamp to time_t object
   utc = epochTime;
-
-  // Then convert the UTC UNIX timestamp to local time, Central European Time (Berlin, Paris)
+  // Convert the UTC UNIX timestamp to local time, Central European Time (Berlin, Paris)
   TimeChangeRule CEST = {"CEST", Last, Sun, Mar, 2, 120};     // Central European Summer Time
   TimeChangeRule CET = {"CET ", Last, Sun, Oct, 3, 60};       // Central European Standard Time
   Timezone CE(CEST, CET);
@@ -1174,6 +1173,7 @@ void trigger() {
     config.thermostat.temp_min = config.program[2].temp -1;
     config.thermostat.temp_max = config.program[2].temp +1;
   }
+  setTemp = config.thermostat.temp_min+(config.thermostat.temp_max-config.thermostat.temp_min)/2;
 }
 
 
@@ -1342,10 +1342,16 @@ void loop(void) {
 
   if (presTime - clockTime > 60000) {
     if (!config.thermostat.manual) {
-      getTime();
       trigger();
-      if (! program_screen && ! setup_screen) updateDisplayN();
+      if (! program_screen && ! setup_screen) {
+        // display setTemp
+        tft.setFreeFont(&FreeSans18pt7b);
+        tft.setTextColor(TFT_CYAN);
+        tft.fillRect(DISP2_N_X - 1, DISP2_N_Y + 7, 48, 33, TFT_BLACK);
+        tft.drawString(String(setTemp), DISP2_N_X + 4, DISP2_N_Y + 9);
+      }
     }
+    getTime();
     clockTime = millis();
   }
 
