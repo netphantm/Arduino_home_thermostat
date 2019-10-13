@@ -1342,6 +1342,7 @@ void loop(void) {
 
   if (presTime - clockTime > 60000) {
     if (!config.thermostat.manual) {
+      getTime();
       trigger();
       if (! program_screen && ! setup_screen) updateDisplayN();
     }
