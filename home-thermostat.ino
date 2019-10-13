@@ -201,6 +201,7 @@ int setTemp; // config.thermostat.temp_min+(config.thermostat.temp_max-config.th
 int textLineY = 92;
 int textLineX = 135;
 int pressed = 0;
+int timeNum, timeP0, timeP1, timeP2;
 
 // Create 16 keys for the setup keypad
 char keyLabelSetup[16][5] = {"Heat", "min", "max", "int", "Auto", "+", "+", "+", "Man", "-", "-", "-", "Prog", "RST", "Save", "Exit"};
@@ -409,6 +410,7 @@ void printFile() {
   while (file.available()) {
     Serial.print((char)file.read());
   }
+  yield();
   Serial.println();
 }
 
@@ -448,6 +450,7 @@ void switchRelais(const char* sw = "TOGGLE") { // if no parameter given, assume 
     }
     Serial.println(relaisState);
   }
+  yield();
 }
 
 void autoSwitchRelais() {
@@ -470,6 +473,64 @@ void clearSpiffs() {
   Serial.println(F("SPIFFS formatted"));
   emptyFile = true; // mark file as empty
   server.send(200, "text/plain", "200: OK, SPIFFS formatted, settings cleared\n");
+}
+
+//// local webserver handlers / send data to logserver
+void handleRoot() {
+  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>Nothing to see here! Move along...</h1></div></body></html>\n");
+  yield();
+}
+
+void handleNotFound(){
+  server.send(404, "text/plain", "404: File not found!\n");
+  yield();
+}
+
+void updateSettingsWebform() {
+  Serial.println(F("\n= updateSettingsWebform"));
+
+  if (server.args() < 1 || server.args() > 19 || !server.arg("SHA1") || !server.arg("loghost")) {
+    server.send(400, "text/html", "400: Invalid Request\n");
+    return;
+  }
+  strcpy(config.thermostat.SHA1, server.arg("SHA1").c_str());
+  strcpy(config.thermostat.loghost, server.arg("loghost").c_str());
+  config.thermostat.httpsPort = server.arg("httpsPort").toInt();
+  config.thermostat.interval = server.arg("interval").toInt();
+  config.thermostat.temp_min = server.arg("temp_min").toInt();
+  config.thermostat.temp_max = server.arg("temp_max").toInt();
+  config.thermostat.temp_dev = server.arg("temp_dev").toFloat();
+  config.thermostat.heater = true;
+  if (server.arg("manual") == "true" || server.arg("manual") == "1") {
+    config.thermostat.manual = true;
+  } else {
+    config.thermostat.manual = false;
+  }
+  if (server.arg("debug") == "true" || server.arg("debug") == "1") {
+    config.thermostat.debug = true;
+  } else {
+    config.thermostat.debug = false;
+  }
+  config.program[0].temp = server.arg("tempP0").toInt();
+  config.program[0].hour = server.arg("hourP0").toInt();
+  config.program[0].minute = server.arg("minuteP0").toInt();
+  config.program[1].temp = server.arg("tempP1").toInt();
+  config.program[1].hour = server.arg("hourP1").toInt();
+  config.program[1].minute = server.arg("minuteP1").toInt();
+  config.program[2].temp = server.arg("tempP2").toInt();
+  config.program[2].hour = server.arg("hourP2").toInt();
+  config.program[2].minute = server.arg("minuteP2").toInt();
+  String json = "";
+  DynamicJsonDocument doc(512);
+  JsonObject root = doc.to<JsonObject>();
+  config.save(root);
+  serializeJson(doc, json);
+  saveFile();
+  writeSettingsWeb();
+  server.send(200, "text/html", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n\tbody { \n\t\tfont-size: 16px;\n\t}\n\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n</head>\n<body>\nArduino response: Code 200, OK.\n<br>Back to \n<form method='POST' action='https://temperature.hugo.ro'>\n\t<button name='device' value='" + String(hostname) + "'>Graph</button>\n</form>\n<br>\nJSON root: \n<br>\n<div id='debug'></div>\n<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n<script>\n\tvar root = " + json + ";\n\tvar tbl = prettyPrint(root);\n\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n</body>\n");
+  status_timer = millis();
+  statusPrint("Settings updated from webform");
+  yield();
 }
 
 bool readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
@@ -496,7 +557,6 @@ bool readSettingsWeb() { // use plain http, as SHA1 fingerprint not known yet
   } else {
     Serial.printf("[HTTPS] Unable to connect\n");
   }
-  Alarm.delay(10);
   client.flush();
   yield();
   return true;
@@ -551,7 +611,6 @@ void writeSettingsWeb() {
     status_timer = millis();
     statusPrint("ERROR saving to webserver");
   }
-  Alarm.delay(10);
   client->flush();
   yield();
   if (config.thermostat.debug)
@@ -612,7 +671,6 @@ void logToWebserver() {
     status_timer = millis();
     statusDot(TFT_RED);
   }
-  Alarm.delay(10);
   client->flush();
   yield();
 }
@@ -781,7 +839,6 @@ void statusClear() {
 
 // update the 3 display screens
 void updateDisplayN() {
-  Serial.print(F("- MEM free heap: "));
   tft.setTextDatum(TL_DATUM); // Use top left corner as text coord datum
   sprintf(temp_short, "%.1f", temp_c);
   setTemp = config.thermostat.temp_min+(config.thermostat.temp_max-config.thermostat.temp_min)/2;
@@ -953,6 +1010,7 @@ void getTime() {
   Serial.print(date);
   Serial.print(F(" - "));
   Serial.println(timeNow);
+  yield();
 }
 
 // print next alarm time to serial
@@ -1060,7 +1118,7 @@ void drawClockTime(int clockX,int clockY,int clockRadius) {
   y5_old = y5;
 }
 
-// execute / trigger timers actions
+// set timers
 void triggerTimerP1() {
   config.thermostat.temp_min = config.program[0].temp - 1;
   config.thermostat.temp_max = config.program[0].temp + 1;
@@ -1094,62 +1152,30 @@ void triggerTimerP3() {
     Serial.println(Alarm.getTriggeredAlarmId());
 }
 
-//// local webserver handlers / send data to logserver
-void handleRoot() {
-  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>Nothing to see here! Move along...</h1></div></body></html>\n");
-  Alarm.delay(10);
+// trigger timers
+void trigger() {
+  timeNum = hourNow * 60 + minuteNow;
+  timeP0 = config.program[0].hour * 60 + config.program[0].minute;
+  timeP1 = config.program[1].hour * 60 + config.program[1].minute;
+  timeP2 = config.program[2].hour * 60 + config.program[2].minute;
+  if ((timeNum > 0) && (timeNum < timeP0)) {
+    config.thermostat.temp_min = config.program[2].temp -1;
+    config.thermostat.temp_max = config.program[2].temp +1;
+  }
+  if ((timeNum > timeP0) && (timeNum < timeP1)) {
+    config.thermostat.temp_min = config.program[0].temp -1;
+    config.thermostat.temp_max = config.program[0].temp +1;
+  }
+  if ((timeNum > timeP1) && (timeNum < timeP2)) {
+    config.thermostat.temp_min = config.program[1].temp -1;
+    config.thermostat.temp_max = config.program[1].temp +1;
+  }
+  if ((timeNum > timeP2) && (timeNum < 1440)) {
+    config.thermostat.temp_min = config.program[2].temp -1;
+    config.thermostat.temp_max = config.program[2].temp +1;
+  }
 }
 
-void handleNotFound(){
-  server.send(404, "text/plain", "404: File not found!\n");
-  Alarm.delay(10);
-}
-
-void updateSettingsWebform() {
-  Serial.println(F("\n= updateSettingsWebform"));
-
-  if (server.args() < 1 || server.args() > 19 || !server.arg("SHA1") || !server.arg("loghost")) {
-    server.send(400, "text/html", "400: Invalid Request\n");
-    return;
-  }
-  strcpy(config.thermostat.SHA1, server.arg("SHA1").c_str());
-  strcpy(config.thermostat.loghost, server.arg("loghost").c_str());
-  config.thermostat.httpsPort = server.arg("httpsPort").toInt();
-  config.thermostat.interval = server.arg("interval").toInt();
-  config.thermostat.temp_min = server.arg("temp_min").toInt();
-  config.thermostat.temp_max = server.arg("temp_max").toInt();
-  config.thermostat.temp_dev = server.arg("temp_dev").toFloat();
-  config.thermostat.heater = true;
-  if (server.arg("manual") == "true" || server.arg("manual") == "1") {
-    config.thermostat.manual = true;
-  } else {
-    config.thermostat.manual = false;
-  }
-  if (server.arg("debug") == "true" || server.arg("debug") == "1") {
-    config.thermostat.debug = true;
-  } else {
-    config.thermostat.debug = false;
-  }
-  config.program[0].temp = server.arg("tempP0").toInt();
-  config.program[0].hour = server.arg("hourP0").toInt();
-  config.program[0].minute = server.arg("minuteP0").toInt();
-  config.program[1].temp = server.arg("tempP1").toInt();
-  config.program[1].hour = server.arg("hourP1").toInt();
-  config.program[1].minute = server.arg("minuteP1").toInt();
-  config.program[2].temp = server.arg("tempP2").toInt();
-  config.program[2].hour = server.arg("hourP2").toInt();
-  config.program[2].minute = server.arg("minuteP2").toInt();
-  saveFile();
-  String json = "";
-  DynamicJsonDocument doc(512);
-  JsonObject root = doc.to<JsonObject>();
-  config.save(root);
-  serializeJson(doc, json);
-  server.send(200, "text/html", "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<style>\n\tbody { \n\t\tfont-size: 16px;\n\t}\n\tform { \n\t\tdisplay: inline; \n\t}\n</style>\n</head>\n<body>\nArduino response: Code 200, OK.\n<br>Back to \n<form method='POST' action='https://temperature.hugo.ro'>\n\t<button name='device' value='" + String(hostname) + "'>Graph</button>\n</form>\n<br>\nJSON root: \n<br>\n<div id='debug'></div>\n<script src='https://temperature.hugo.ro/prettyprint.js'></script>\n<script>\n\tvar root = " + json + ";\n\tvar tbl = prettyPrint(root);\n\tdocument.getElementById('debug').appendChild(tbl);\n</script>\n</body>\n");
-  status_timer = millis();
-  statusPrint("Settings updated from webform");
-  Alarm.delay(10);
-}
 
 //------------------------------------------------------------------------------------------
 
@@ -1315,17 +1341,21 @@ void loop(void) {
   unsigned long passed = presTime - prevTime;
 
   if (presTime - clockTime > 60000) {
-    getTime();
+    if (!config.thermostat.manual) {
+      trigger();
+      if (! program_screen && ! setup_screen) updateDisplayN();
+    }
     clockTime = millis();
   }
 
   if (passed > config.thermostat.interval) {
-    if (system_get_free_heap_size() < 5000) {
+    if (system_get_free_heap_size() < 10000) {
       tft.fillScreen(TFT_RED);
       Alarm.delay(2000);
       ESP.reset();
     }
     Serial.println(F("\nInterval passed"));
+    getTime();
     getTemperature();
     autoSwitchRelais();
     logToWebserver();
@@ -1807,6 +1837,7 @@ void loop(void) {
         // assign action
         // 0/1
         if (b == 0 && config.thermostat.temp_min < 31 && config.thermostat.temp_max < 33) {
+            config.thermostat.manual = true;
             config.thermostat.temp_min++;
             config.thermostat.temp_max++;
             autoSwitchRelais();
@@ -1815,6 +1846,7 @@ void loop(void) {
             Alarm.delay(200);
         }
         if (b == 1 && config.thermostat.temp_min > 17 && config.thermostat.temp_max > 19) {
+            config.thermostat.manual = true;
             config.thermostat.temp_min--;
             config.thermostat.temp_max--;
             autoSwitchRelais();
