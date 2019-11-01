@@ -477,7 +477,7 @@ void clearSpiffs() {
 
 //// local webserver handlers / send data to logserver
 void handleRoot() {
-  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>Nothing to see here! Move along...</h1></div></body></html>\n");
+  server.send(200, "text/html", "<html><head></head><body><div align=\"center\"><h1>You can rent this space for only $5 a week.</h1></div></body></html>\n");
   yield();
 }
 
@@ -1059,64 +1059,6 @@ void changeTimers(bool resetTimers = false) {
   }
 }
 
-// add leading 0s to times
-char* printDigits(int digit) {
-  if (digit < 10) {
-    sprintf(buffer, "0%d", digit);
-  } else {
-    sprintf(buffer, "%d", digit);
-  }
-  return buffer;
-}
-
-// draw clock face and hands
-void drawClockFace(int clockX,int clockY,int clockRadius) {
-  tft.drawCircle(clockX,clockY,clockRadius + 1,COLOR_CLOCK); // clock face
-  tft.drawCircle(clockX,clockY,clockRadius + 2,COLOR_CLOCK); // clock face
-  for( int z=0; z < 360;z= z + 30 ){ // hour ticks
-    //Begin at 0° and stop at 360°
-    float angle = z ;
-    angle=(angle/57.29577951) ; //Convert degrees to radians
-    x2=(clockX+(sin(angle)*clockRadius));
-    y2=(clockY-(cos(angle)*clockRadius));
-    x3=(clockX+(sin(angle)*(clockRadius-2)));
-    y3=(clockY-(cos(angle)*(clockRadius-2)));
-    x6=(clockX+(sin(angle)*(clockRadius-6)));
-    y6=(clockY-(cos(angle)*(clockRadius-6)));
-    if (z == 0 || z == 90 || z == 180 || z == 270) {
-      //tft.fillCircle(x3,y3,2,COLOR_CLOCK); // draw bigger dots on 3/12/9/6
-      tft.drawLine(x2,y2,x6,y6,COLOR_CLOCK); // draw longer lines on 3/6/9/12
-    } else {
-      //tft.fillCircle(x6,y6,1,COLOR_CLOCK); // draw small dots
-      tft.drawLine(x2,y2,x3,y3,COLOR_CLOCK); // draw short lines
-    }
-  }
-}
-
-void drawClockTime(int clockX,int clockY,int clockRadius) {
-  float angle = minuteNow * 6 ;
-  angle = (angle/57.29577951) ; //Convert degrees to radians
-  x4=(clockX+(sin(angle)*(clockRadius-10)));
-  y4=(clockY-(cos(angle)*(clockRadius-10)));
-  if (minuteOld != minuteNow)
-    tft.drawLine(clockX,clockY,x4_old,y4_old,TFT_BLACK);
-  tft.drawLine(clockX,clockY,x4,y4,COLOR_CLOCK);
-  angle = hourNow * 30 + int((minuteNow / 12) * 6 )   ;
-  angle=(angle/57.29577951) ; //Convert degrees to radians
-  x5=(clockX+(sin(angle)*(clockRadius-17)));
-  y5=(clockY-(cos(angle)*(clockRadius-17)));
-  if (minuteOld != minuteNow)
-    tft.drawLine(clockX,clockY,x5_old,y5_old,TFT_BLACK);
-  tft.drawLine(clockX,clockY,x5,y5,COLOR_CLOCK);
-
-  minuteOld = minuteNow;
-  hourOld = hourNow;
-  x4_old = x4;
-  y4_old = y4;
-  x5_old = x5;
-  y5_old = y5;
-}
-
 // set timers
 void triggerTimerP1() {
   config.thermostat.temp_min = config.program[0].temp - 1;
@@ -1174,6 +1116,64 @@ void trigger() {
     config.thermostat.temp_max = config.program[2].temp +1;
   }
   setTemp = config.thermostat.temp_min+(config.thermostat.temp_max-config.thermostat.temp_min)/2;
+}
+
+// add leading 0s to times
+char* printDigits(int digit) {
+  if (digit < 10) {
+    sprintf(buffer, "0%d", digit);
+  } else {
+    sprintf(buffer, "%d", digit);
+  }
+  return buffer;
+}
+
+// draw clock face and hands
+void drawClockFace(int clockX,int clockY,int clockRadius) {
+  tft.drawCircle(clockX,clockY,clockRadius + 1,COLOR_CLOCK); // clock face
+  tft.drawCircle(clockX,clockY,clockRadius + 2,COLOR_CLOCK); // clock face
+  for( int z=0; z < 360;z= z + 30 ){ // hour ticks
+    //Begin at 0° and stop at 360°
+    float angle = z ;
+    angle=(angle/57.29577951) ; //Convert degrees to radians
+    x2=(clockX+(sin(angle)*clockRadius));
+    y2=(clockY-(cos(angle)*clockRadius));
+    x3=(clockX+(sin(angle)*(clockRadius-2)));
+    y3=(clockY-(cos(angle)*(clockRadius-2)));
+    x6=(clockX+(sin(angle)*(clockRadius-6)));
+    y6=(clockY-(cos(angle)*(clockRadius-6)));
+    if (z == 0 || z == 90 || z == 180 || z == 270) {
+      //tft.fillCircle(x3,y3,2,COLOR_CLOCK); // draw bigger dots on 3/12/9/6
+      tft.drawLine(x2,y2,x6,y6,COLOR_CLOCK); // draw longer lines on 3/6/9/12
+    } else {
+      //tft.fillCircle(x6,y6,1,COLOR_CLOCK); // draw small dots
+      tft.drawLine(x2,y2,x3,y3,COLOR_CLOCK); // draw short lines
+    }
+  }
+}
+
+void drawClockTime(int clockX,int clockY,int clockRadius) {
+  float angle = minuteNow * 6 ;
+  angle = (angle/57.29577951) ; //Convert degrees to radians
+  x4=(clockX+(sin(angle)*(clockRadius-10)));
+  y4=(clockY-(cos(angle)*(clockRadius-10)));
+  if (minuteOld != minuteNow)
+    tft.drawLine(clockX,clockY,x4_old,y4_old,TFT_BLACK);
+  tft.drawLine(clockX,clockY,x4,y4,COLOR_CLOCK);
+  angle = hourNow * 30 + int((minuteNow / 12) * 6 )   ;
+  angle=(angle/57.29577951) ; //Convert degrees to radians
+  x5=(clockX+(sin(angle)*(clockRadius-17)));
+  y5=(clockY-(cos(angle)*(clockRadius-17)));
+  if (minuteOld != minuteNow)
+    tft.drawLine(clockX,clockY,x5_old,y5_old,TFT_BLACK);
+  tft.drawLine(clockX,clockY,x5,y5,COLOR_CLOCK);
+
+  minuteOld = minuteNow;
+  hourOld = hourNow;
+  x4_old = x4;
+  y4_old = y4;
+  x5_old = x5;
+  y5_old = y5;
 }
 
 
@@ -1301,8 +1301,8 @@ void setup() {
   }
   getTemperature();
   getTime();
-  setTime(local);
   changeTimers();
+  trigger();
 
   // local webserver client handlers
   server.onNotFound(handleNotFound);
@@ -1312,6 +1312,7 @@ void setup() {
     updateSettingsWebform();
     getTemperature();
     changeTimers();
+    trigger();
     autoSwitchRelais();
     if (! setup_screen && ! program_screen)
       updateDisplayN();
